@@ -1,0 +1,60 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+const quizId = Astro.url.searchParams.get('quiz') || '';
+---
+
+<Layout title="Results">
+  <main class="page">
+    <div class="container">
+      <section class="card stack">
+        <h1>Results</h1>
+        <div id="results-panel">Loading results...</div>
+      </section>
+    </div>
+  </main>
+</Layout>
+
+<script type="module">
+
+  const quizId = '${quizId}';
+  const panel = document.getElementById('results-panel');
+  const stored = quizId ? window.sessionStorage.getItem(`quiz-result-${quizId}`) : null;
+
+  if (!stored) {
+    panel.innerHTML = '<div class="empty-state">No quiz results found. <a href="/quizzes">Browse quizzes</a>.</div>';
+  } else {
+    const result = JSON.parse(stored);
+    const percentage = result.total ? Math.round((result.correctCount / result.total) * 100) : 0;
+
+    panel.innerHTML = `
+      <div class="split">
+        <div>
+          <h2>${result.quizTitle}</h2>
+          <p class="muted">${result.topic || ''}</p>
+        </div>
+        <span class="badge dark">${percentage}%</span>
+      </div>
+      <div class="toolbar">
+        <span class="badge success">Correct: ${result.correctCount}</span>
+        <span class="badge error">Incorrect: ${result.incorrectCount}</span>
+        <span class="badge">Total: ${result.total}</span>
+      </div>
+      <div class="toolbar">
+        <a class="btn" href="/take/${quizId}">Retry all</a>
+        <a class="btn secondary" href="/quizzes">Browse quizzes</a>
+      </div>
+      <div class="stack">
+        <h3>Answer review</h3>
+        ${result.review.map((item) => `
+          <article class="card ${item.isCorrect ? 'answer-correct' : 'answer-incorrect'}">
+            <strong>${item.questionText}</strong>
+            <p class="muted">Your answer: ${item.selectedAnswer || 'Not answered'}</p>
+            <p class="muted">Correct answer: ${item.correctAnswer}</p>
+            <p>${item.explanation || ''}</p>
+          </article>
+        `).join('')}
+      </div>
+    `;
+  }
+</script>

@@ -1,0 +1,125 @@
+---
+import Layout from '../../layouts/Layout.astro';
+
+export function getStaticPaths() {
+  return Array.from({ length: 20 }, (_, index) => ({ params: { id: String(index + 1) } }));
+}
+
+const { id } = Astro.params;
+---
+
+<Layout title="Take quiz">
+  <main class="page">
+    <div class="container">
+      <div id="page-data" data-id={id}></div>
+      <section class="card" style="margin-top: 1rem;">
+        <div id="quiz-taker">Loading quiz…</div>
+      </section>
+    </div>
+  </main>
+</Layout>
+
+<script type="module">
+  import { getQuiz } from '../../lib/api.js';
+
+  const quizId = document.getElementById('page-data')?.dataset.id;
+  const container = document.getElementById('quiz-taker');
+
+  async function loadQuiz() {
+    try {
+      const quiz = await getQuiz(quizId);
+      const state = { index: 0, answers: Array(quiz.questions.length).fill(null), immediateFeedback: true };
+
+      const render = () => {
+        const question = quiz.questions[state.index];
+        container.innerHTML = `
+          <div class="split">
+            <div>
+              <h1>${quiz.title}</h1>
+              <p class="muted">${quiz.description || ''}</p>
+            </div>
+            <span class="badge">${state.index + 1}/${quiz.questions.length}</span>
+          </div>
+          <div class="toolbar" style="margin-bottom:1rem;">
+            <span class="badge">${quiz.topic}</span>
+            <span class="badge">${quiz.difficulty}</span>
+            <label class="badge"><input type="checkbox" id="feedback-toggle" ${state.immediateFeedback ? 'checked' : ''} /> Immediate feedback</label>
+          </div>
+          <div class="card" style="margin-bottom:1rem;">
+            <h3>${state.index + 1}. ${question.questionText}</h3>
+            <div class="stack">
+              ${question.choices.map((choice) => `<label class="card" style="margin:0; padding:0.85rem;"><input type="radio" name="choice" value="${choice.text}" ${state.answers[state.index] === choice.text ? 'checked' : ''} /> ${choice.text}</label>`).join('')}
+            </div>
+            <p id="feedback" class="muted" style="margin-top:0.75rem;"></p>
+          </div>
+          <div class="split">
+            <button class="btn secondary" id="previous-button" ${state.index === 0 ? 'disabled' : ''}>Previous</button>
+            <div class="toolbar">
+              <button class="btn secondary" id="next-button">Next</button>
+              <button class="btn" id="submit-button">Submit</button>
+            </div>
+          </div>
+        `;
+
+        document.getElementById('feedback-toggle')?.addEventListener('change', (event) => {
+          state.immediateFeedback = event.currentTarget.checked;
+        });
+
+        document.querySelectorAll('input[name="choice"]').forEach((input) => {
+          input.addEventListener('change', (event) => {
+            state.answers[state.index] = event.currentTarget.value;
+            const feedback = document.getElementById('feedback');
+            if (state.immediateFeedback && feedback) {
+              const correct = question.choices.find((choice) => choice.isCorrect)?.text;
+              const isCorrect = event.currentTarget.value === correct;
+              feedback.textContent = isCorrect ? 'Correct.' : `Incorrect. Correct answer: ${correct}`;
+              feedback.className = isCorrect ? 'badge success' : 'badge error';
+            }
+          });
+        });
+
+        document.getElementById('previous-button')?.addEventListener('click', () => {
+          state.index = Math.max(0, state.index - 1);
+          render();
+        });
+
+        document.getElementById('next-button')?.addEventListener('click', () => {
+          state.index = Math.min(quiz.questions.length - 1, state.index + 1);
+          render();
+        });
+
+        document.getElementById('submit-button')?.addEventListener('click', () => {
+          const review = quiz.questions.map((questionItem, index) => {
+            const correct = questionItem.choices.find((choice) => choice.isCorrect)?.text;
+            const selectedAnswer = state.answers[index];
+            return {
+              questionText: questionItem.questionText,
+              selectedAnswer,
+              correctAnswer: correct,
+              explanation: questionItem.explanation || '',
+              isCorrect: selectedAnswer === correct
+            };
+          });
+
+          const correctCount = review.filter((item) => item.isCorrect).length;
+          window.sessionStorage.setItem(`quiz-result-${quizId}`, JSON.stringify({
+            quizId,
+            quizTitle: quiz.title,
+            topic: quiz.topic,
+            total: review.length,
+            correctCount,
+            incorrectCount: review.length - correctCount,
+            review
+          }));
+          window.location.href = `/results?quiz=${quizId}`;
+        });
+      };
+
+      render();
+    } catch {
+      container.innerHTML = '<p>Unable to load the quiz right now.</p>';
+    }
+  }
+
+  loadQuiz();
+</script>

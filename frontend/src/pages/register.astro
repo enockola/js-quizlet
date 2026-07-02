@@ -1,0 +1,43 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Register">
+  <main class="page">
+    <div class="container">
+      <section class="card" style="max-width: 560px; margin: 0 auto;">
+        <h1>Create an account</h1>
+        <form id="register-form">
+          <div class="field">
+            <label>Name</label>
+            <input name="name" required />
+          </div>
+          <div class="field">
+            <label>Email</label>
+            <input name="email" type="email" required />
+          </div>
+          <div class="field">
+            <label>Password</label>
+            <input name="password" type="password" required />
+          </div>
+          <button class="btn" type="submit">Register</button>
+        </form>
+      </section>
+    </div>
+  </main>
+</Layout>
+
+<script type="module">
+  import { register } from '../lib/api.js';
+  const form = document.getElementById('register-form');
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const data = new FormData(form);
+    try {
+      await register({ username: data.get('name'), email: data.get('email'), password: data.get('password') });
+      window.location.href = '/dashboard';
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+</script>

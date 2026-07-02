@@ -1,0 +1,10 @@
+---
+const { exercise } = Astro.props;
+---
+
+<article class="card">
+  <div class="badge">{exercise.category}</div>
+  <h3>{exercise.title}</h3>
+  <p class="muted">{exercise.prompt}</p>
+  <p><strong>Answer:</strong> {exercise.answer}</p>
+</article>

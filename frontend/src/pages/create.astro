@@ -1,0 +1,144 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Create Quiz">
+  <main class="page">
+    <div class="container">
+      <section class="stack">
+        <div class="split">
+          <div>
+            <h1>Create a quiz</h1>
+            <p class="muted">Build a quiz with at least one question and exactly one correct answer per question.</p>
+          </div>
+          <a class="btn secondary" href="/dashboard">Back to dashboard</a>
+        </div>
+
+        <form id="quiz-form" class="quiz-builder">
+          <div class="field"><label>Title</label><input name="title" required /></div>
+          <div class="field"><label>Description</label><textarea name="description"></textarea></div>
+          <div class="field"><label>Topic</label><input name="topic" required placeholder="Variables, Functions, Arrays..." /></div>
+          <div class="field">
+            <label>Difficulty</label>
+            <select name="difficulty"><option>Beginner</option><option>Intermediate</option><option>Advanced</option></select>
+          </div>
+          <label class="badge" style="width: fit-content;"><input type="checkbox" name="isPublic" checked /> Public quiz</label>
+          <div id="question-list" class="stack"></div>
+          <div class="toolbar">
+            <button type="button" class="btn secondary" id="add-question">Add question</button>
+            <button class="btn" type="submit">Save quiz</button>
+          </div>
+          <p class="muted" id="create-status"></p>
+        </form>
+      </section>
+    </div>
+  </main>
+</Layout>
+
+<script type="module">
+  import { createQuiz, getUser } from '../lib/api.js';
+
+  if (!getUser()) {
+    window.location.href = '/login';
+  }
+
+  const form = document.getElementById('quiz-form');
+  const questionList = document.getElementById('question-list');
+  const addQuestionButton = document.getElementById('add-question');
+  const status = document.getElementById('create-status');
+  let questionIndex = 0;
+
+  function choiceMarkup(questionId, choiceId) {
+    return `
+      <div class="card" style="margin-top:0.5rem;">
+        <label>Choice ${choiceId + 1}</label>
+        <input name="choiceText-${questionId}-${choiceId}" required />
+        <label><input type="radio" name="correct-${questionId}" value="${choiceId}" ${choiceId === 0 ? 'checked' : ''} /> Correct</label>
+      </div>
+    `;
+  }
+
+  function questionMarkup(index) {
+    return `
+      <div class="question-editor" data-question="${index}">
+        <div class="split">
+          <h3>Question ${index + 1}</h3>
+          <button type="button" class="btn secondary" data-remove-question="${index}">Remove question</button>
+        </div>
+        <div class="field"><label>Question text</label><input name="questionText-${index}" required /></div>
+        <div class="field">
+          <label>Question type</label>
+          <select name="questionType-${index}"><option value="multipleChoice">Multiple choice</option><option value="trueFalse">True / False</option></select>
+        </div>
+        <div class="choices" data-choices="${index}">${[0, 1, 2, 3].map((choiceId) => choiceMarkup(index, choiceId)).join('')}</div>
+        <button type="button" class="btn secondary" data-add-choice="${index}">Add choice</button>
+        <div class="field"><label>Explanation</label><textarea name="explanation-${index}"></textarea></div>
+      </div>
+    `;
+  }
+
+  function addQuestion() {
+    questionList.insertAdjacentHTML('beforeend', questionMarkup(questionIndex));
+    questionIndex += 1;
+  }
+
+  addQuestion();
+  addQuestion();
+
+  addQuestionButton.addEventListener('click', addQuestion);
+
+  form.addEventListener('click', (event) => {
+    const addChoiceButton = event.target.closest('[data-add-choice]');
+    if (addChoiceButton) {
+      const index = addChoiceButton.getAttribute('data-add-choice');
+      const choicesContainer = form.querySelector(`[data-choices="${index}"]`);
+      const choiceCount = choicesContainer.querySelectorAll('.card').length;
+      const choice = document.createElement('div');
+      choice.className = 'card';
+      choice.style.marginTop = '0.5rem';
+      choice.innerHTML = choiceMarkup(index, choiceCount);
+      choicesContainer.appendChild(choice);
+      return;
+    }
+
+    const removeQuestionButton = event.target.closest('[data-remove-question]');
+    if (removeQuestionButton) {
+      const index = removeQuestionButton.getAttribute('data-remove-question');
+      form.querySelector(`[data-question="${index}"]`)?.remove();
+    }
+  });
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const data = new FormData(form);
+    const questions = Array.from(form.querySelectorAll('[data-question]')).map((questionBlock) => {
+      const questionId = questionBlock.getAttribute('data-question');
+      const choiceInputs = Array.from(questionBlock.querySelectorAll('input[name^="choiceText-"]'));
+      const correctIndex = Number(form.querySelector(`input[name="correct-${questionId}"]:checked`)?.value || 0);
+      return {
+        questionText: data.get(`questionText-${questionId}`),
+        questionType: data.get(`questionType-${questionId}`),
+        explanation: data.get(`explanation-${questionId}`),
+        choices: choiceInputs.map((input, choiceIndex) => ({ text: input.value, isCorrect: choiceIndex === correctIndex }))
+      };
+    }).filter((question) => question.questionText);
+
+    const payload = {
+      title: data.get('title'),
+      description: data.get('description'),
+      topic: data.get('topic'),
+      difficulty: data.get('difficulty'),
+      isPublic: data.get('isPublic') === 'on',
+      source: 'user',
+      questions
+    };
+
+    try {
+      status.textContent = 'Saving quiz...';
+      await createQuiz(payload);
+      window.location.href = '/dashboard';
+    } catch (error) {
+      status.textContent = error.message;
+    }
+  });
+</script>

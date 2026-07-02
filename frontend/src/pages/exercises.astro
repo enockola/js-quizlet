@@ -1,0 +1,81 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Exercises">
+  <main class="page">
+    <div class="container">
+      <section class="stack">
+        <div class="split">
+          <div>
+            <h1>Exercise recommendations</h1>
+            <p class="muted">Browse in-app JavaScript practice tasks transformed from external learning sources.</p>
+          </div>
+          <div class="toolbar">
+            <input id="exercise-search" placeholder="Search exercises" />
+            <select id="exercise-topic">
+              <option value="">All topics</option>
+              <option value="Variables">Variables</option>
+              <option value="Functions">Functions</option>
+              <option value="Arrays">Arrays</option>
+              <option value="Objects">Objects</option>
+              <option value="Loops">Loops</option>
+            </select>
+          </div>
+        </div>
+        <div id="exercise-status" class="muted"></div>
+        <div class="list" id="exercise-list"></div>
+      </section>
+    </div>
+  </main>
+</Layout>
+
+<script type="module">
+  import { getExercises } from '../lib/api.js';
+
+  const search = document.getElementById('exercise-search');
+  const topic = document.getElementById('exercise-topic');
+  const list = document.getElementById('exercise-list');
+  const status = document.getElementById('exercise-status');
+
+  function render(exercises) {
+    if (!exercises.length) {
+      list.innerHTML = '<div class="empty-state">No exercises found.</div>';
+      return;
+    }
+
+    list.innerHTML = exercises.map((exercise) => `
+      <article class="card">
+        <div class="split">
+          <div>
+            <span class="badge">${exercise.source || 'generated'}</span>
+            <span class="badge">${exercise.topic}</span>
+          </div>
+          <span class="badge">${exercise.difficulty}</span>
+        </div>
+        <h3>${exercise.title}</h3>
+        <p class="muted">${exercise.prompt || exercise.description || ''}</p>
+        <div class="toolbar">
+          ${(exercise.tags || []).map((tag) => `<span class="badge">#${tag}</span>`).join('')}
+        </div>
+        <a class="btn secondary" href="/exercises/${exercise.id}">Open practice</a>
+      </article>
+    `).join('');
+  }
+
+  async function load() {
+    if (status) status.textContent = 'Loading exercises...';
+    try {
+      const exercises = await getExercises(topic?.value || '', search?.value || '');
+      render(exercises);
+      if (status) status.textContent = `${exercises.length} exercises loaded`;
+    } catch (error) {
+      if (status) status.textContent = error.message;
+      list.innerHTML = `<div class="empty-state">${error.message}</div>`;
+    }
+  }
+
+  search?.addEventListener('input', load);
+  topic?.addEventListener('change', load);
+  load();
+</script>

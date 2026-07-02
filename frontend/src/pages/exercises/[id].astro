@@ -1,0 +1,154 @@
+---
+import Layout from '../../layouts/Layout.astro';
+
+export function getStaticPaths() {
+  return Array.from({ length: 20 }, (_, index) => ({ params: { id: String(index + 1) } }));
+}
+
+const { id } = Astro.params;
+---
+
+<Layout title="Exercise details">
+  <main class="page">
+    <div class="container">
+      <a href="/exercises" class="muted">← Back to exercises</a>
+      <div id="page-data" data-id={id}></div>
+      <section class="card stack" style="margin-top: 1rem;">
+        <div id="exercise-details">Loading exercise...</div>
+      </section>
+    </div>
+  </main>
+</Layout>
+
+<script type="module">
+  import { getExercise } from '../../lib/api.js';
+
+  const exerciseId = document.getElementById('page-data')?.dataset.id;
+  const container = document.getElementById('exercise-details');
+
+  function parseInput(value) {
+    if (!value) {
+      return undefined;
+    }
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  }
+
+  async function loadExercise() {
+    try {
+      const exercise = await getExercise(exerciseId);
+      container.innerHTML = `
+        <div class="split">
+          <div>
+            <h1>${exercise.title}</h1>
+            <p class="muted">${exercise.prompt || exercise.description || ''}</p>
+          </div>
+          <div class="toolbar">
+            <span class="badge">${exercise.source || 'generated'}</span>
+            <span class="badge">${exercise.topic}</span>
+            <span class="badge">${exercise.difficulty}</span>
+          </div>
+        </div>
+        <div class="stack">
+          <section class="card">
+            <h3>Starter code</h3>
+            <textarea id="code-editor" class="code-editor" rows="12">${exercise.starterCode || 'function solve(input) {\n  // Write your solution here\n  return input;\n}\n'}</textarea>
+          </section>
+          <section class="card">
+            <h3>Input</h3>
+            <p class="muted">Optional input passed to <code>solve(input)</code>. Use JSON for objects/arrays.</p>
+            <textarea id="code-input" rows="3" style="width:100%;font-family:ui-monospace, 'Cascadia Code', 'Source Code Pro', monospace;">"hello"</textarea>
+          </section>
+          <section class="card">
+            <h3>Expected outcome</h3>
+            <p>${exercise.expectedOutput || 'A correct JavaScript solution.'}</p>
+          </section>
+          <section class="card">
+            <h3>Run your code</h3>
+            <button class="btn" id="run-button" type="button">Run code</button>
+            <p id="code-status" class="muted" style="margin-top: 0.5rem;"></p>
+            <pre id="code-output" class="code-output" style="white-space: pre-wrap; margin: 1rem 0 0 0; font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', monospace;"></pre>
+          </section>
+          <section class="card">
+            <h3>Hints</h3>
+            <ul>
+              ${(exercise.hints || []).map((hint) => `<li>${hint}</li>`).join('') || '<li>Think through the topic before coding.</li>'}
+            </ul>
+          </section>
+          <section class="card">
+            <h3>Related concepts</h3>
+            <div class="toolbar">
+              ${(exercise.relatedConcepts || []).map((concept) => `<span class="badge">${concept}</span>`).join('') || '<span class="badge">JavaScript</span>'}
+            </div>
+          </section>
+          <section class="card">
+            <h3>Solution note</h3>
+            <p class="muted">${exercise.solutionExplanation || 'This practice task was transformed into an original in-site exercise.'}</p>
+          </section>
+        </div>
+      `;
+
+      const codeEditor = document.getElementById('code-editor');
+      const codeInput = document.getElementById('code-input');
+      const runButton = document.getElementById('run-button');
+      const codeStatus = document.getElementById('code-status');
+      const codeOutput = document.getElementById('code-output');
+
+      const normalizeOutput = (value) => {
+        if (value === undefined) return 'undefined';
+        if (value === null) return 'null';
+        if (typeof value === 'object') return JSON.stringify(value, null, 2);
+        return String(value);
+      };
+
+      const expected = normalizeOutput(parseInput(exercise.expectedOutput || ''));
+
+      const runUserCode = () => {
+        const source = codeEditor?.value || '';
+        const inputValue = parseInput(codeInput?.value || '');
+
+        let resultText = '';
+        let statusText = '';
+        let statusClass = 'muted';
+
+        try {
+          const wrapper = `${source}; if (typeof solve !== 'function') { throw new Error('Please define a function named solve(input)'); } return solve(${JSON.stringify(inputValue)});`;
+          const fn = new Function(wrapper);
+          const result = fn();
+          const output = normalizeOutput(result);
+          resultText = `Output: ${output}`;
+
+          if (expected) {
+            const match = output === expected;
+            statusText = match ? 'Correct output!' : `Expected: ${expected}`;
+            statusClass = match ? 'badge success' : 'badge error';
+          } else {
+            statusText = 'Code executed successfully';
+            statusClass = 'badge success';
+          }
+        } catch (runError) {
+          resultText = `Error: ${runError.message}`;
+          statusText = 'Execution failed';
+          statusClass = 'badge error';
+        }
+
+        if (codeStatus) {
+          codeStatus.textContent = statusText;
+          codeStatus.className = statusClass;
+        }
+        if (codeOutput) {
+          codeOutput.textContent = resultText;
+        }
+      };
+
+      runButton?.addEventListener('click', runUserCode);
+    } catch (error) {
+      container.innerHTML = `<div class="empty-state">${error.message}</div>`;
+    }
+  }
+
+  loadExercise();
+</script>

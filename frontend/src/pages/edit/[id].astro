@@ -1,0 +1,164 @@
+---
+import Layout from '../../layouts/Layout.astro';
+export function getStaticPaths() {
+  return Array.from({ length: 20 }, (_, index) => ({ params: { id: String(index + 1) } }));
+}
+
+const { id } = Astro.params;
+---
+
+<Layout title="Edit Quiz">
+  <main class="page">
+    <div class="container">
+      <section class="stack">
+        <div class="split">
+          <div>
+            <h1>Edit quiz</h1>
+            <p class="muted">Update quiz content or delete the quiz entirely.</p>
+          </div>
+          <a class="btn secondary" href="/dashboard">Back to dashboard</a>
+        </div>
+        <div id="page-data" data-id={id}></div>
+        <form id="edit-form" class="quiz-builder"></form>
+      </section>
+    </div>
+  </main>
+</Layout>
+
+<script type="module">
+  import { deleteQuiz, getQuiz, getUser, updateQuiz } from '../../lib/api.js';
+
+  if (!getUser()) {
+    window.location.href = '/login';
+  }
+
+  const quizId = document.getElementById('page-data')?.dataset.id;
+  const form = document.getElementById('edit-form');
+
+  function choiceMarkup(questionId, choiceId, choice = {}) {
+    return `
+      <div class="card" style="margin-top:0.5rem;">
+        <label>Choice ${choiceId + 1}</label>
+        <input name="choiceText-${questionId}-${choiceId}" value="${choice.text || ''}" required />
+        <label><input type="radio" name="correct-${questionId}" value="${choiceId}" ${choice.isCorrect ? 'checked' : ''} /> Correct</label>
+      </div>
+    `;
+  }
+
+  function questionMarkup(question, index) {
+    return `
+      <div class="question-editor" data-question="${index}">
+        <div class="split">
+          <h3>Question ${index + 1}</h3>
+          <button type="button" class="btn secondary" data-remove-question="${index}">Remove question</button>
+        </div>
+        <div class="field"><label>Question text</label><input name="questionText-${index}" value="${question.questionText || ''}" required /></div>
+        <div class="field">
+          <label>Question type</label>
+          <select name="questionType-${index}"><option value="multipleChoice" ${question.questionType === 'multipleChoice' ? 'selected' : ''}>Multiple choice</option><option value="trueFalse" ${question.questionType === 'trueFalse' ? 'selected' : ''}>True / False</option></select>
+        </div>
+        <div class="choices" data-choices="${index}">${question.choices.map((choice, choiceIndex) => choiceMarkup(index, choiceIndex, choice)).join('')}</div>
+        <button type="button" class="btn secondary" data-add-choice="${index}">Add choice</button>
+        <div class="field"><label>Explanation</label><textarea name="explanation-${index}">${question.explanation || ''}</textarea></div>
+      </div>
+    `;
+  }
+
+  function renderQuiz(quiz) {
+    form.innerHTML = `
+      <div class="field"><label>Title</label><input name="title" value="${quiz.title || ''}" required /></div>
+      <div class="field"><label>Description</label><textarea name="description">${quiz.description || ''}</textarea></div>
+      <div class="field"><label>Topic</label><input name="topic" value="${quiz.topic || ''}" required /></div>
+      <div class="field">
+        <label>Difficulty</label>
+        <select name="difficulty"><option ${quiz.difficulty === 'Beginner' ? 'selected' : ''}>Beginner</option><option ${quiz.difficulty === 'Intermediate' ? 'selected' : ''}>Intermediate</option><option ${quiz.difficulty === 'Advanced' ? 'selected' : ''}>Advanced</option></select>
+      </div>
+      <label class="badge" style="width: fit-content;"><input type="checkbox" name="isPublic" ${quiz.isPublic ? 'checked' : ''} /> Public quiz</label>
+      <div id="question-list" class="stack">${quiz.questions.map((question, index) => questionMarkup(question, index)).join('')}</div>
+      <div class="toolbar">
+        <button type="button" class="btn secondary" id="add-question">Add question</button>
+        <button class="btn" type="submit">Save changes</button>
+        <button type="button" class="btn danger" id="delete-button">Delete quiz</button>
+      </div>
+      <p class="muted" id="edit-status"></p>
+    `;
+
+    const questionList = document.getElementById('question-list');
+    const status = document.getElementById('edit-status');
+    let nextIndex = quiz.questions.length;
+
+    const addQuestion = () => {
+      const question = { questionText: '', questionType: 'multipleChoice', choices: [{ text: '', isCorrect: true }, { text: '', isCorrect: false }], explanation: '' };
+      questionList.insertAdjacentHTML('beforeend', questionMarkup(question, nextIndex));
+      nextIndex += 1;
+    };
+
+    document.getElementById('add-question').addEventListener('click', addQuestion);
+
+    form.addEventListener('click', (event) => {
+      const addChoiceButton = event.target.closest('[data-add-choice]');
+      if (addChoiceButton) {
+        const index = addChoiceButton.getAttribute('data-add-choice');
+        const choicesContainer = form.querySelector(`[data-choices="${index}"]`);
+        const choiceCount = choicesContainer.querySelectorAll('.card').length;
+        const wrapper = document.createElement('div');
+        wrapper.className = 'card';
+        wrapper.style.marginTop = '0.5rem';
+        wrapper.innerHTML = choiceMarkup(index, choiceCount);
+        choicesContainer.appendChild(wrapper);
+        return;
+      }
+
+      const removeQuestionButton = event.target.closest('[data-remove-question]');
+      if (removeQuestionButton) {
+        const index = removeQuestionButton.getAttribute('data-remove-question');
+        form.querySelector(`[data-question="${index}"]`)?.remove();
+      }
+    });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const data = new FormData(form);
+      const questions = Array.from(form.querySelectorAll('[data-question]')).map((questionBlock) => {
+        const questionId = questionBlock.getAttribute('data-question');
+        const choiceInputs = Array.from(questionBlock.querySelectorAll('input[name^="choiceText-"]'));
+        const correctIndex = Number(form.querySelector(`input[name="correct-${questionId}"]:checked`)?.value || 0);
+        return {
+          questionText: data.get(`questionText-${questionId}`),
+          questionType: data.get(`questionType-${questionId}`),
+          explanation: data.get(`explanation-${questionId}`),
+          choices: choiceInputs.map((input, choiceIndex) => ({ text: input.value, isCorrect: choiceIndex === correctIndex }))
+        };
+      }).filter((question) => question.questionText);
+
+      try {
+        status.textContent = 'Saving changes...';
+        await updateQuiz(quizId, {
+          title: data.get('title'),
+          description: data.get('description'),
+          topic: data.get('topic'),
+          difficulty: data.get('difficulty'),
+          isPublic: data.get('isPublic') === 'on',
+          questions
+        });
+        window.location.href = '/dashboard';
+      } catch (error) {
+        status.textContent = error.message;
+      }
+    });
+
+    document.getElementById('delete-button').addEventListener('click', async () => {
+      if (!confirm('Delete this quiz?')) return;
+      try {
+        await deleteQuiz(quizId);
+        window.location.href = '/dashboard';
+      } catch (error) {
+        status.textContent = error.message;
+      }
+    });
+  }
+
+  getQuiz(quizId).then(renderQuiz).catch((error) => {
+    form.innerHTML = `<div class="empty-state">${error.message}</div>`;
+  });
+</script>
