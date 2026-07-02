@@ -252,5 +252,5 @@ Set `MONGODB_URI` in the server environment to use MongoDB Atlas instead of the 
 ## Notes
 
 - The active stack is **`frontend/` + `server/`**. The `backend/` folder is an older prototype and is not used by the current frontend.
-- Legacy Vite/Svelte scaffold files (`frontend/index.html`, `App.svelte`, `main.js`) remain in the repo but are not part of the Astro app.
+- The leftover Vite/Svelte scaffold (`frontend/index.html`, `src/main.js`, `src/App.svelte`, `src/app.css`, `src/components/QuizApp.svelte`) has been removed so the frontend is purely Astro.
 - Dynamic quiz routes (`quizzes/[id]`, `take/[id]`, `edit/[id]`) currently pre-render IDs 1–20 via `getStaticPaths()`.
