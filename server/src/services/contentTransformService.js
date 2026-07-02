@@ -218,39 +218,6 @@ export function buildFreeCodeCampQuizzes() {
   return freeCodeCampTopicCatalog.map((topic) => buildQuizDocument(topic, 'imported', 'freeCodeCamp'));
 }
 
-export function buildExerciseFromMetadata(metadata, source = metadata.source || 'generated') {
-  const relatedConcepts = Array.from(new Set([metadata.topic, ...(metadata.tags || [])].filter(Boolean)));
-  const title = metadata.title;
-  const topic = metadata.topic;
-  const prompt = `Build an in-site solution for ${title} using JavaScript. Focus on ${topic.toLowerCase()} without leaving this app.`;
-  const starterCode = `function solve() {\n  // write your solution here\n}`;
-  const expectedOutput = `A correct solution for the ${topic.toLowerCase()} practice task.`;
-  const hints = [
-    `Think about the ${topic.toLowerCase()} concept first.`,
-    `Use array, object, or function methods that match the topic.`
-  ];
-
-  return {
-    title,
-    topic,
-    difficulty: metadata.difficulty,
-    source,
-    importSourceId: metadata.id || slugify(title),
-    originalSourceUrl: metadata.url || null,
-    prompt,
-    starterCode,
-    expectedOutput,
-    hints,
-    solutionExplanation: `This exercise is inspired by ${title} and rewritten as an original in-site practice prompt.`,
-    relatedConcepts,
-    tags: metadata.tags || []
-  };
-}
-
-export function buildExerciseDocuments(metadataList, source = 'generated') {
-  return metadataList.map((metadata) => buildExerciseFromMetadata(metadata, source));
-}
-
 export function buildFallbackSeedContent() {
   return {
     quizzes: buildFreeCodeCampQuizzes()
