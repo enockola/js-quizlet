@@ -1,0 +1,44 @@
+---
+const links = [
+  { href: '/', label: 'Home' },
+  { href: '/quizzes', label: 'Browse' },
+  { href: '/create', label: 'Create Quiz' },
+  { href: '/dashboard', label: 'Dashboard' }
+];
+---
+
+<nav class="navbar">
+  <div class="container">
+    <a href="/" class="brand">Quizlet MVP</a>
+    <div class="nav-links">
+      {links.map((link) => <a href={link.href}>{link.label}</a>)}
+      <a href="/login" class="btn secondary auth-link" id="login-link">Login</a>
+      <a href="/register" class="btn secondary auth-link" id="register-link">Register</a>
+      <a href="/" class="btn secondary auth-link is-hidden" id="logout-link">Logout</a>
+    </div>
+  </div>
+</nav>
+
+<script>
+  const token = window.localStorage.getItem('quizlet_token');
+  const user = window.localStorage.getItem('quizlet_user');
+  const loginLink = document.getElementById('login-link');
+  const registerLink = document.getElementById('register-link');
+  const logoutLink = document.getElementById('logout-link');
+
+  if (token && user) {
+    const parsed = JSON.parse(user);
+    if (loginLink) loginLink.classList.add('is-hidden');
+    if (registerLink) registerLink.classList.add('is-hidden');
+    if (logoutLink) {
+      logoutLink.textContent = `Logout · ${parsed.username || parsed.name || 'User'}`;
+      logoutLink.classList.remove('is-hidden');
+      logoutLink.addEventListener('click', (event) => {
+        event.preventDefault();
+        window.localStorage.removeItem('quizlet_token');
+        window.localStorage.removeItem('quizlet_user');
+        window.location.href = '/';
+      });
+    }
+  }
+</script>

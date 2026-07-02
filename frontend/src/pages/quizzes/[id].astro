@@ -1,0 +1,50 @@
+---
+import Layout from '../../layouts/Layout.astro';
+
+export function getStaticPaths() {
+  return Array.from({ length: 20 }, (_, index) => ({ params: { id: String(index + 1) } }));
+}
+
+const { id } = Astro.params;
+---
+
+<Layout title="Quiz details">
+  <main class="page">
+    <div class="container">
+      <a href="/quizzes" class="muted">← Back to quizzes</a>
+      <div id="page-data" data-id={id}></div>
+      <section class="card" style="margin-top: 1rem;">
+        <div id="quiz-details">Loading quiz…</div>
+      </section>
+    </div>
+  </main>
+</Layout>
+
+<script type="module">
+  import { getQuiz } from '../../lib/api.js';
+
+  const quizId = document.getElementById('page-data')?.dataset.id;
+  const container = document.getElementById('quiz-details');
+
+  async function loadQuiz() {
+    try {
+      const quiz = await getQuiz(quizId);
+      container.innerHTML = `
+        <h1>${quiz.title}</h1>
+        <p class="muted">${quiz.description || ''}</p>
+        <div class="toolbar" style="margin-bottom:1rem;">
+          <span class="badge">${quiz.topic}</span>
+          <span class="badge">${quiz.difficulty}</span>
+          <span class="badge">${quiz.source}</span>
+          <span class="badge">${quiz.questions?.length || 0} questions</span>
+        </div>
+        <p><strong>Questions:</strong> ${quiz.questions?.length || 0}</p>
+        <a class="btn" href="/take/${quiz.id}">Start this quiz</a>
+      `;
+
+    } catch {
+      container.innerHTML = '<p>Unable to load the quiz right now.</p>';
+    }
+  }
+  loadQuiz();
+</script>

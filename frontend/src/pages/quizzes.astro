@@ -1,0 +1,72 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Quizzes">
+  <main class="page">
+    <div class="container">
+      <section class="stack">
+        <div class="split">
+          <div>
+            <h1>Browse quizzes</h1>
+            <p class="muted">Search JavaScript quizzes by topic, title, or description.</p>
+          </div>
+          <a class="btn secondary" href="/create">Create quiz</a>
+        </div>
+        <div class="card">
+          <label for="quiz-search">Search quizzes</label>
+          <input id="quiz-search" placeholder="arrays, objects, loops..." />
+        </div>
+        <div id="quiz-status" class="muted"></div>
+        <div class="grid grid-2" id="quiz-list"></div>
+      </section>
+    </div>
+  </main>
+</Layout>
+
+<script type="module">
+  import { getQuizzes } from '../lib/api.js';
+
+  const input = document.getElementById('quiz-search');
+  const list = document.getElementById('quiz-list');
+  const status = document.getElementById('quiz-status');
+
+  function render(quizzes) {
+    if (!quizzes.length) {
+      list.innerHTML = '<div class="empty-state">No quizzes found.</div>';
+      return;
+    }
+
+    list.innerHTML = quizzes.map((quiz) => `
+      <article class="card">
+        <div class="badge">${quiz.topic}</div>
+        <h3>${quiz.title}</h3>
+        <p class="muted">${quiz.description || ''}</p>
+        <div class="toolbar" style="margin: 0.75rem 0;">
+          <span class="badge">${quiz.difficulty}</span>
+          <span class="badge">${quiz.source}</span>
+          <span class="badge">${quiz.questions?.length || 0} questions</span>
+        </div>
+        <div class="toolbar">
+          <a class="btn secondary" href="/quizzes/${quiz.id}">Details</a>
+          <a class="btn" href="/take/${quiz.id}">Start quiz</a>
+        </div>
+      </article>
+    `).join('');
+  }
+
+  async function load() {
+    if (status) status.textContent = 'Loading quizzes...';
+    try {
+      const quizzes = await getQuizzes(input?.value || '');
+      render(quizzes);
+      if (status) status.textContent = `${quizzes.length} quizzes loaded`;
+    } catch (error) {
+      if (status) status.textContent = error.message;
+      list.innerHTML = `<div class="empty-state">${error.message}</div>`;
+    }
+  }
+
+  input?.addEventListener('input', load);
+  load();
+</script>
