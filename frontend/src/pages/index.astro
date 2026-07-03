@@ -8,12 +8,13 @@ import Layout from '../layouts/Layout.astro';
       <div class="container">
         <div class="stack" style="max-width: 840px;">
           <span class="badge dark">JavaScript Quizlet MVP</span>
-          <h1>Quiz-focused study made simple.</h1>
-          <p>Browse JavaScript quizzes, review answers, and master key concepts with lightweight study sessions.</p>
+          <h1>Study JavaScript with focused quizzes.</h1>
+          <p>Browse public quizzes, review answers, and master key concepts with lightweight study sessions.</p>
           <div class="toolbar">
             <a class="btn" href="/quizzes">Browse quizzes</a>
-            <a class="btn secondary" href="/create">Create quiz</a>
-            <button class="btn ghost" id="seed-button" type="button">Seed fallback</button>
+            <a class="btn secondary auth-only is-hidden" href="/create">Create quiz</a>
+            <a class="btn secondary guest-only" href="/login">Log in to create</a>
+            <button class="btn ghost auth-only is-hidden" id="seed-button" type="button">Seed fallback</button>
           </div>
           <p class="muted" id="seed-status"></p>
         </div>
@@ -27,7 +28,23 @@ import Layout from '../layouts/Layout.astro';
           <a class="muted" href="/quizzes">View all</a>
         </div>
         <div class="grid grid-2" id="featured-quizzes">
-          <div class="card">Loading quizzes…</div>
+          <div class="card">Loading quizzes...</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page auth-only is-hidden" id="dashboard-section">
+      <div class="container">
+        <div class="stack">
+          <div class="split">
+            <div>
+              <h2>Your quizzes</h2>
+              <p class="muted">Manage the quizzes you created while keeping the public study tools on this same page.</p>
+            </div>
+            <a class="btn" href="/create">Create quiz</a>
+          </div>
+          <div id="dashboard-status" class="muted"></div>
+          <div class="grid grid-2" id="dashboard-list"></div>
         </div>
       </div>
     </section>
@@ -35,11 +52,23 @@ import Layout from '../layouts/Layout.astro';
 </Layout>
 
 <script type="module">
-  import { getQuizzes, seedData } from '../lib/api.js';
+  import { deleteQuiz, getMyQuizzes, getQuizzes, getToken, getUser, seedData } from '../lib/api.js';
 
   const quizContainer = document.getElementById('featured-quizzes');
   const status = document.getElementById('seed-status');
   const seedButton = document.getElementById('seed-button');
+  const dashboardStatus = document.getElementById('dashboard-status');
+  const dashboardList = document.getElementById('dashboard-list');
+  const user = getToken() ? getUser() : null;
+
+  function syncAuthState() {
+    document.querySelectorAll('.auth-only').forEach((element) => {
+      element.classList.toggle('is-hidden', !user);
+    });
+    document.querySelectorAll('.guest-only').forEach((element) => {
+      element.classList.toggle('is-hidden', Boolean(user));
+    });
+  }
 
   async function loadFeatured() {
     try {
@@ -64,6 +93,54 @@ import Layout from '../layouts/Layout.astro';
     }
   }
 
+  function renderDashboard(quizzes) {
+    if (!dashboardList) return;
+
+    if (!quizzes.length) {
+      dashboardList.innerHTML = '<div class="empty-state">No quizzes yet. Create your first quiz.</div>';
+      return;
+    }
+
+    dashboardList.innerHTML = quizzes.map((quiz) => `
+      <article class="card">
+        <div class="badge">${quiz.topic}</div>
+        <h3>${quiz.title}</h3>
+        <p class="muted">${quiz.description || ''}</p>
+        <div class="toolbar" style="margin: 0.75rem 0;">
+          <span class="badge">${quiz.difficulty}</span>
+          <span class="badge">${quiz.source}</span>
+        </div>
+        <div class="toolbar">
+          <a class="btn secondary" href="/quizzes/${quiz.id}">Details</a>
+          <a class="btn secondary" href="/edit/${quiz.id}">Edit</a>
+          <button class="btn danger" data-delete="${quiz.id}">Delete</button>
+        </div>
+      </article>
+    `).join('');
+
+    document.querySelectorAll('[data-delete]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        if (!confirm('Delete this quiz?')) return;
+        const id = button.getAttribute('data-delete');
+        await deleteQuiz(id);
+        loadDashboard();
+      });
+    });
+  }
+
+  async function loadDashboard() {
+    if (!user) return;
+    if (dashboardStatus) dashboardStatus.textContent = 'Loading your quizzes...';
+    try {
+      const quizzes = await getMyQuizzes();
+      renderDashboard(quizzes);
+      if (dashboardStatus) dashboardStatus.textContent = `${quizzes.length} quizzes found`;
+    } catch (error) {
+      if (dashboardStatus) dashboardStatus.textContent = error.message;
+      if (dashboardList) dashboardList.innerHTML = `<div class="empty-state">${error.message}</div>`;
+    }
+  }
+
   seedButton?.addEventListener('click', async () => {
     if (status) status.textContent = 'Seeding data...';
     try {
@@ -75,6 +152,7 @@ import Layout from '../layouts/Layout.astro';
     }
   });
 
-
+  syncAuthState();
   loadFeatured();
+  loadDashboard();
 </script>

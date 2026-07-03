@@ -7,7 +7,7 @@ import Layout from '../layouts/Layout.astro';
     <div class="container">
       <section class="card" style="max-width: 560px; margin: 0 auto;">
         <h1>Login</h1>
-        <p class="muted">Log in to manage your dashboard and save quizzes.</p>
+        <p class="muted">Log in to create, edit, and manage your quizzes.</p>
         <form id="login-form">
           <div class="field">
             <label>Email</label>
@@ -33,7 +33,7 @@ import Layout from '../layouts/Layout.astro';
     const data = new FormData(form);
     try {
       await login({ email: data.get('email'), password: data.get('password') });
-      window.location.href = '/dashboard';
+      window.location.href = '/';
     } catch (error) {
       alert(error.message);
     }
