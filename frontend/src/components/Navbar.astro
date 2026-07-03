@@ -1,9 +1,11 @@
 ---
 const links = [
   { href: '/', label: 'Home' },
-  { href: '/quizzes', label: 'Browse' },
-  { href: '/create', label: 'Create Quiz' },
-  { href: '/dashboard', label: 'Dashboard' }
+  { href: '/quizzes', label: 'Browse' }
+];
+
+const authLinks = [
+  { href: '/create', label: 'Create Quiz' }
 ];
 ---
 
@@ -12,8 +14,9 @@ const links = [
     <a href="/" class="brand">Quizlet MVP</a>
     <div class="nav-links">
       {links.map((link) => <a href={link.href}>{link.label}</a>)}
-      <a href="/login" class="btn secondary auth-link" id="login-link">Login</a>
-      <a href="/register" class="btn secondary auth-link" id="register-link">Register</a>
+      {authLinks.map((link) => <a href={link.href} class="auth-only is-hidden">{link.label}</a>)}
+      <a href="/login" class="btn secondary guest-only auth-link" id="login-link">Login</a>
+      <a href="/register" class="btn secondary guest-only auth-link" id="register-link">Register</a>
       <a href="/" class="btn secondary auth-link is-hidden" id="logout-link">Logout</a>
     </div>
   </div>
@@ -25,13 +28,28 @@ const links = [
   const loginLink = document.getElementById('login-link');
   const registerLink = document.getElementById('register-link');
   const logoutLink = document.getElementById('logout-link');
+  const authOnlyElements = document.querySelectorAll('.auth-only');
+  const guestOnlyElements = document.querySelectorAll('.guest-only');
+
+  let parsedUser = null;
 
   if (token && user) {
-    const parsed = JSON.parse(user);
+    try {
+      parsedUser = JSON.parse(user);
+    } catch {
+      window.localStorage.removeItem('quizlet_token');
+      window.localStorage.removeItem('quizlet_user');
+    }
+  }
+
+  if (token && parsedUser) {
+    authOnlyElements.forEach((element) => element.classList.remove('is-hidden'));
+    guestOnlyElements.forEach((element) => element.classList.add('is-hidden'));
+
     if (loginLink) loginLink.classList.add('is-hidden');
     if (registerLink) registerLink.classList.add('is-hidden');
     if (logoutLink) {
-      logoutLink.textContent = `Logout · ${parsed.username || parsed.name || 'User'}`;
+      logoutLink.textContent = `Logout - ${parsedUser.username || parsedUser.name || 'User'}`;
       logoutLink.classList.remove('is-hidden');
       logoutLink.addEventListener('click', (event) => {
         event.preventDefault();

@@ -11,7 +11,7 @@ import Layout from '../layouts/Layout.astro';
             <h1>Create a quiz</h1>
             <p class="muted">Build a quiz with at least one question and exactly one correct answer per question.</p>
           </div>
-          <a class="btn secondary" href="/dashboard">Back to dashboard</a>
+          <a class="btn secondary" href="/">Back to home</a>
         </div>
 
         <form id="quiz-form" class="quiz-builder">
@@ -36,9 +36,9 @@ import Layout from '../layouts/Layout.astro';
 </Layout>
 
 <script type="module">
-  import { createQuiz, getUser } from '../lib/api.js';
+  import { createQuiz, getToken, getUser } from '../lib/api.js';
 
-  if (!getUser()) {
+  if (!getToken() || !getUser()) {
     window.location.href = '/login';
   }
 
@@ -136,7 +136,7 @@ import Layout from '../layouts/Layout.astro';
     try {
       status.textContent = 'Saving quiz...';
       await createQuiz(payload);
-      window.location.href = '/dashboard';
+      window.location.href = '/';
     } catch (error) {
       status.textContent = error.message;
     }

@@ -16,7 +16,7 @@ const { id } = Astro.params;
             <h1>Edit quiz</h1>
             <p class="muted">Update quiz content or delete the quiz entirely.</p>
           </div>
-          <a class="btn secondary" href="/dashboard">Back to dashboard</a>
+          <a class="btn secondary" href="/">Back to home</a>
         </div>
         <div id="page-data" data-id={id}></div>
         <form id="edit-form" class="quiz-builder"></form>
@@ -26,9 +26,9 @@ const { id } = Astro.params;
 </Layout>
 
 <script type="module">
-  import { deleteQuiz, getQuiz, getUser, updateQuiz } from '../../lib/api.js';
+  import { deleteQuiz, getQuiz, getToken, getUser, updateQuiz } from '../../lib/api.js';
 
-  if (!getUser()) {
+  if (!getToken() || !getUser()) {
     window.location.href = '/login';
   }
 
@@ -141,7 +141,7 @@ const { id } = Astro.params;
           isPublic: data.get('isPublic') === 'on',
           questions
         });
-        window.location.href = '/dashboard';
+        window.location.href = '/';
       } catch (error) {
         status.textContent = error.message;
       }
@@ -151,7 +151,7 @@ const { id } = Astro.params;
       if (!confirm('Delete this quiz?')) return;
       try {
         await deleteQuiz(quizId);
-        window.location.href = '/dashboard';
+        window.location.href = '/';
       } catch (error) {
         status.textContent = error.message;
       }

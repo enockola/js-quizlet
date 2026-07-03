@@ -35,7 +35,7 @@ import Layout from '../layouts/Layout.astro';
     const data = new FormData(form);
     try {
       await register({ username: data.get('name'), email: data.get('email'), password: data.get('password') });
-      window.location.href = '/dashboard';
+      window.location.href = '/';
     } catch (error) {
       alert(error.message);
     }

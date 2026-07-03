@@ -2,78 +2,18 @@
 import Layout from '../layouts/Layout.astro';
 ---
 
-<Layout title="Dashboard">
+<Layout title="Dashboard moved">
   <main class="page">
     <div class="container">
-      <section class="stack">
-        <div class="split">
-          <div>
-            <h1>Dashboard</h1>
-            <p class="muted">Your owned quizzes and quick actions live here.</p>
-          </div>
-          <a class="btn" href="/create">Create quiz</a>
-        </div>
-        <div id="dashboard-status" class="muted"></div>
-        <div class="grid grid-2" id="dashboard-list"></div>
+      <section class="empty-state">
+        <h1>Dashboard moved</h1>
+        <p class="muted">Your dashboard now lives on the home page.</p>
+        <a class="btn" href="/">Go to home</a>
       </section>
     </div>
   </main>
 </Layout>
 
-<script type="module">
-  import { getMyQuizzes, getUser } from '../lib/api.js';
-
-  const status = document.getElementById('dashboard-status');
-  const list = document.getElementById('dashboard-list');
-
-  if (!getUser()) {
-    window.location.href = '/login';
-  }
-
-  function render(quizzes) {
-    if (!quizzes.length) {
-      list.innerHTML = '<div class="empty-state">No quizzes yet. Create your first quiz.</div>';
-      return;
-    }
-
-    list.innerHTML = quizzes.map((quiz) => `
-      <article class="card">
-        <div class="badge">${quiz.topic}</div>
-        <h3>${quiz.title}</h3>
-        <p class="muted">${quiz.description || ''}</p>
-        <div class="toolbar" style="margin: 0.75rem 0;">
-          <span class="badge">${quiz.difficulty}</span>
-          <span class="badge">${quiz.source}</span>
-        </div>
-        <div class="toolbar">
-          <a class="btn secondary" href="/edit/${quiz.id}">Edit</a>
-          <a class="btn secondary" href="/quizzes/${quiz.id}">Take</a>
-          <button class="btn danger" data-delete="${quiz.id}">Delete</button>
-        </div>
-      </article>
-    `).join('');
-
-    document.querySelectorAll('[data-delete]').forEach((button) => {
-      button.addEventListener('click', async () => {
-        if (!confirm('Delete this quiz?')) return;
-        const id = button.getAttribute('data-delete');
-        await import('../lib/api.js').then(({ deleteQuiz }) => deleteQuiz(id));
-        load();
-      });
-    });
-  }
-
-  async function load() {
-    if (status) status.textContent = 'Loading your quizzes...';
-    try {
-      const quizzes = await getMyQuizzes();
-      render(quizzes);
-      if (status) status.textContent = `${quizzes.length} quizzes found`;
-    } catch (error) {
-      if (status) status.textContent = error.message;
-      list.innerHTML = `<div class="empty-state">${error.message}</div>`;
-    }
-  }
-
-  load();
+<script>
+  window.location.replace('/');
 </script>
