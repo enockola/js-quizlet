@@ -12,7 +12,9 @@ dotenv.config();
 
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:4321';
+
+// Get (or default) the frontend_url.  We only want to accept API calls from OUR frontend.
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:4321';
 
 const userSchema = new mongoose.Schema(
   {
@@ -82,7 +84,7 @@ const Quiz = mongoose.models.Quiz || mongoose.model('Quiz', quizSchema);
 
 const app = express();
 
-app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }));
+app.use(cors({ origin: FRONTEND_URL, credentials: true }));
 app.use(express.json());
 
 const getAuthToken = (req) => {
@@ -567,7 +569,38 @@ async function connectMongo() {
 
 async function bootstrap() {
   const connected = await connectMongo();
-  if (!connected) {
+  
+  if (connected) {
+    try {
+      
+      // Find or create the default demo student to own the seeded quizzes
+      let demoUser = await User.findOne({ email: 'demo@student.com' });
+      if (!demoUser) {
+        demoUser = await User.create({
+          username: 'Demo Student',
+          email: 'demo@student.com',
+          passwordHash: await bcrypt.hash('Password123', 10)
+        });
+        console.log('Created default demo student for MongoDB.');
+      }
+
+      // Get the default seed quizzes
+      const seedQuizzes = seedInMemory().quizzes;
+
+      // Persist them. persistQuizDocuments automatically skips quizzes 
+      // if matching title, topic, and source already exist in MongoDB.
+      const { created } = await persistQuizDocuments(seedQuizzes, demoUser._id);
+      
+      if (created.length > 0) {
+        console.log(`Successfully seeded ${created.length} new default quizzes into MongoDB.`);
+      } else {
+        console.log('All default quizzes already exist in MongoDB. Skipping seed.');
+      }
+    } catch (error) {
+      console.error('Error during MongoDB default initialization:', error);
+    }
+  } else {
+    // Local fallback when MongoDB URI is missing or fails
     seedLocalData();
   }
 
