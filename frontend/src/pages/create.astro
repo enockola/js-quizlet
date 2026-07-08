@@ -9,26 +9,55 @@ import Layout from '../layouts/Layout.astro';
         <div class="split">
           <div>
             <h1>Create a quiz</h1>
-            <p class="muted">Build a quiz with at least one question and exactly one correct answer per question.</p>
+            <p class="muted">Build the quiz details once, then move between compact question summaries as the quiz grows.</p>
           </div>
           <a class="btn secondary" href="/">Back to home</a>
         </div>
 
-        <form id="quiz-form" class="quiz-builder">
-          <div class="field"><label>Title</label><input name="title" required /></div>
-          <div class="field"><label>Description</label><textarea name="description"></textarea></div>
-          <div class="field"><label>Topic</label><input name="topic" required placeholder="Variables, Functions, Arrays..." /></div>
-          <div class="field">
-            <label>Difficulty</label>
-            <select name="difficulty"><option>Beginner</option><option>Intermediate</option><option>Advanced</option></select>
+        <form id="quiz-form" class="quiz-builder create-workspace" novalidate>
+          <details class="card quiz-details" open>
+            <summary>
+              <span>
+                <strong>Quiz details</strong>
+                <span class="muted" id="details-summary">Untitled quiz</span>
+              </span>
+            </summary>
+            <div class="details-grid">
+              <div class="field"><label for="quiz-title">Title</label><input id="quiz-title" name="title" /></div>
+              <div class="field"><label for="quiz-topic">Topic</label><input id="quiz-topic" name="topic" placeholder="Variables, Functions, Arrays..." /></div>
+              <div class="field">
+                <label for="quiz-difficulty">Difficulty</label>
+                <select id="quiz-difficulty" name="difficulty"><option>Beginner</option><option>Intermediate</option><option>Advanced</option></select>
+              </div>
+              <label class="badge publish-toggle"><input type="checkbox" name="isPublic" checked /> Public quiz</label>
+              <div class="field details-description"><label for="quiz-description">Description</label><textarea id="quiz-description" name="description"></textarea></div>
+            </div>
+          </details>
+
+          <div class="quiz-editor-shell">
+            <aside class="question-panel" aria-label="Question list">
+              <div class="split">
+                <div>
+                  <h2>Questions</h2>
+                  <p class="muted" id="question-count">0 questions</p>
+                </div>
+                <button type="button" class="btn secondary compact-btn" id="add-question">Add</button>
+              </div>
+              <div id="question-list" class="question-list"></div>
+            </aside>
+
+            <section class="question-editor" aria-live="polite">
+              <div id="active-question"></div>
+            </section>
           </div>
-          <label class="badge" style="width: fit-content;"><input type="checkbox" name="isPublic" checked /> Public quiz</label>
-          <div id="question-list" class="stack"></div>
-          <div class="toolbar">
-            <button type="button" class="btn secondary" id="add-question">Add question</button>
-            <button class="btn" type="submit">Save quiz</button>
+
+          <div class="split form-footer">
+            <p class="muted" id="create-status"></p>
+            <div class="toolbar">
+              <button type="button" class="btn secondary" id="add-question-footer">Add question</button>
+              <button class="btn" type="submit">Save quiz</button>
+            </div>
           </div>
-          <p class="muted" id="create-status"></p>
         </form>
       </section>
     </div>
@@ -37,108 +66,347 @@ import Layout from '../layouts/Layout.astro';
 
 <script type="module">
   import { createQuiz, getToken, getUser } from '../lib/api.js';
+  import { showToast } from '../lib/toast.js';
 
   if (!getToken() || !getUser()) {
     window.location.href = '/login';
   }
 
   const form = document.getElementById('quiz-form');
+  const detailsSummary = document.getElementById('details-summary');
   const questionList = document.getElementById('question-list');
+  const questionCount = document.getElementById('question-count');
+  const activeQuestionContainer = document.getElementById('active-question');
   const addQuestionButton = document.getElementById('add-question');
+  const addQuestionFooterButton = document.getElementById('add-question-footer');
   const status = document.getElementById('create-status');
-  let questionIndex = 0;
+  const detailsPanel = document.querySelector('.quiz-details');
+  const titleInput = document.getElementById('quiz-title');
+  const topicInput = document.getElementById('quiz-topic');
 
-  function choiceMarkup(questionId, choiceId) {
-    return `
-      <div class="card" style="margin-top:0.5rem;">
-        <label>Choice ${choiceId + 1}</label>
-        <input name="choiceText-${questionId}-${choiceId}" required />
-        <label><input type="radio" name="correct-${questionId}" value="${choiceId}" ${choiceId === 0 ? 'checked' : ''} /> Correct</label>
+  const state = {
+    nextId: 1,
+    activeQuestionId: null,
+    invalidQuestionId: null,
+    questions: []
+  };
+
+  function setStatus(message, type = 'info', options = {}) {
+    status.textContent = message;
+    showToast(message, { type, ...options });
+  }
+
+  function clearStatus() {
+    status.textContent = '';
+  }
+
+  function escapeHtml(value = '') {
+    return String(value)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+  }
+
+  function createDefaultQuestion() {
+    return {
+      id: state.nextId++,
+      questionText: '',
+      questionType: 'multipleChoice',
+      explanation: '',
+      choices: [
+        { text: '', isCorrect: true },
+        { text: '', isCorrect: false },
+        { text: '', isCorrect: false },
+        { text: '', isCorrect: false }
+      ]
+    };
+  }
+
+  function getActiveQuestion() {
+    return state.questions.find((question) => question.id === state.activeQuestionId) || state.questions[0];
+  }
+
+  function getQuizDetails() {
+    const data = new FormData(form);
+    return {
+      title: String(data.get('title') || '').trim(),
+      description: String(data.get('description') || '').trim(),
+      topic: String(data.get('topic') || '').trim(),
+      difficulty: data.get('difficulty') || 'Beginner',
+      isPublic: data.get('isPublic') === 'on'
+    };
+  }
+
+  function validationForQuestion(question) {
+    if (!question.questionText.trim()) return 'missing question text';
+    const filledChoices = question.choices.filter((choice) => choice.text.trim());
+    if (filledChoices.length < 2) return 'needs 2 choices';
+    if (!question.choices.some((choice) => choice.isCorrect && choice.text.trim())) return 'missing correct answer';
+    return 'ready';
+  }
+
+  function updateDetailsSummary() {
+    const details = getQuizDetails();
+    const title = details.title || 'Untitled quiz';
+    const topic = details.topic || 'No topic';
+    const visibility = details.isPublic ? 'Public' : 'Private';
+    detailsSummary.textContent = `${title} - ${topic} - ${details.difficulty} - ${visibility}`;
+  }
+
+  function questionSummary(question, index) {
+    const text = question.questionText.trim() || `Question ${index + 1}`;
+    return text.length > 58 ? `${text.slice(0, 58)}...` : text;
+  }
+
+  function renderQuestionList() {
+    if (questionCount) {
+      questionCount.textContent = `${state.questions.length} ${state.questions.length === 1 ? 'question' : 'questions'}`;
+    }
+
+    questionList.innerHTML = state.questions.map((question, index) => {
+      const validation = validationForQuestion(question);
+      const isActive = question.id === state.activeQuestionId;
+      const isInvalid = question.id === state.invalidQuestionId;
+      const readyClass = validation === 'ready' ? 'success' : 'error';
+      return `
+        <button type="button" class="question-summary ${isActive ? 'is-active' : ''} ${isInvalid ? 'has-error' : ''}" data-select-question="${question.id}">
+          <span class="question-summary-title">${index + 1}. ${escapeHtml(questionSummary(question, index))}</span>
+          <span class="question-summary-meta">
+            <span class="badge">${escapeHtml(question.questionType === 'trueFalse' ? 'True / False' : 'Multiple choice')}</span>
+            <span class="badge ${readyClass}">${escapeHtml(validation)}</span>
+          </span>
+        </button>
+      `;
+    }).join('');
+  }
+
+  function renderChoices(question) {
+    return question.choices.map((choice, index) => `
+      <div class="choice-row">
+        <label class="choice-correct">
+          <input type="radio" name="correct-choice" value="${index}" ${choice.isCorrect ? 'checked' : ''} />
+          Correct
+        </label>
+        <input name="choiceText" data-choice-index="${index}" value="${escapeHtml(choice.text)}" placeholder="Choice ${index + 1}" />
+        <button type="button" class="btn secondary compact-btn" data-remove-choice="${index}" ${question.choices.length <= 2 || question.questionType === 'trueFalse' ? 'disabled' : ''}>Remove</button>
+      </div>
+    `).join('');
+  }
+
+  function renderActiveQuestion() {
+    const question = getActiveQuestion();
+    if (!question) {
+      activeQuestionContainer.innerHTML = '<div class="empty-state">Add a question to start building this quiz.</div>';
+      return;
+    }
+
+    state.activeQuestionId = question.id;
+    const index = state.questions.findIndex((item) => item.id === question.id);
+    activeQuestionContainer.innerHTML = `
+      <div class="split">
+        <div>
+          <h2>Question ${index + 1}</h2>
+          <p class="muted">Editing ${escapeHtml(questionSummary(question, index))}</p>
+        </div>
+        <button type="button" class="btn danger" data-remove-question="${question.id}">Remove question</button>
+      </div>
+      <div class="field">
+        <label for="question-text">Question text</label>
+        <input id="question-text" name="questionText" value="${escapeHtml(question.questionText)}" placeholder="What should the learner answer?" />
+      </div>
+      <div class="field">
+        <label for="question-type">Question type</label>
+        <select id="question-type" name="questionType">
+          <option value="multipleChoice" ${question.questionType === 'multipleChoice' ? 'selected' : ''}>Multiple choice</option>
+          <option value="trueFalse" ${question.questionType === 'trueFalse' ? 'selected' : ''}>True / False</option>
+        </select>
+      </div>
+      <div class="choice-list" id="choice-list">
+        ${renderChoices(question)}
+      </div>
+      <button type="button" class="btn secondary" id="add-choice" ${question.questionType === 'trueFalse' ? 'disabled' : ''}>Add choice</button>
+      <div class="field" style="margin-top: 1rem;">
+        <label for="question-explanation">Explanation</label>
+        <textarea id="question-explanation" name="explanation" placeholder="Optional explanation after the learner answers">${escapeHtml(question.explanation)}</textarea>
       </div>
     `;
   }
 
-  function questionMarkup(index) {
-    return `
-      <div class="question-editor" data-question="${index}">
-        <div class="split">
-          <h3>Question ${index + 1}</h3>
-          <button type="button" class="btn secondary" data-remove-question="${index}">Remove question</button>
-        </div>
-        <div class="field"><label>Question text</label><input name="questionText-${index}" required /></div>
-        <div class="field">
-          <label>Question type</label>
-          <select name="questionType-${index}"><option value="multipleChoice">Multiple choice</option><option value="trueFalse">True / False</option></select>
-        </div>
-        <div class="choices" data-choices="${index}">${[0, 1, 2, 3].map((choiceId) => choiceMarkup(index, choiceId)).join('')}</div>
-        <button type="button" class="btn secondary" data-add-choice="${index}">Add choice</button>
-        <div class="field"><label>Explanation</label><textarea name="explanation-${index}"></textarea></div>
-      </div>
-    `;
+  function render() {
+    updateDetailsSummary();
+    renderQuestionList();
+    renderActiveQuestion();
   }
 
   function addQuestion() {
-    questionList.insertAdjacentHTML('beforeend', questionMarkup(questionIndex));
-    questionIndex += 1;
+    const question = createDefaultQuestion();
+    state.questions.push(question);
+    state.activeQuestionId = question.id;
+    state.invalidQuestionId = null;
+    clearStatus();
+    render();
   }
 
-  addQuestion();
-  addQuestion();
+  function removeQuestion(id) {
+    if (state.questions.length === 1) {
+      setStatus('A quiz needs at least one question.', 'error', { title: 'Cannot remove question' });
+      return;
+    }
 
-  addQuestionButton.addEventListener('click', addQuestion);
+    const index = state.questions.findIndex((question) => question.id === id);
+    state.questions = state.questions.filter((question) => question.id !== id);
+    const nextQuestion = state.questions[Math.max(0, index - 1)] || state.questions[0];
+    state.activeQuestionId = nextQuestion.id;
+    state.invalidQuestionId = null;
+    render();
+  }
+
+  function normalizeTrueFalseChoices(question) {
+    const correctText = question.choices.find((choice) => choice.isCorrect)?.text || 'True';
+    question.choices = [
+      { text: 'True', isCorrect: correctText === 'True' },
+      { text: 'False', isCorrect: correctText === 'False' }
+    ];
+    if (!question.choices.some((choice) => choice.isCorrect)) {
+      question.choices[0].isCorrect = true;
+    }
+  }
+
+  function validateQuiz() {
+    const details = getQuizDetails();
+    if (!details.title || !details.topic) {
+      if (detailsPanel) detailsPanel.open = true;
+      if (!details.title) {
+        titleInput?.focus();
+      } else {
+        topicInput?.focus();
+      }
+      return { valid: false, message: 'Add a quiz title and topic before saving.' };
+    }
+
+    const invalidQuestion = state.questions.find((question) => validationForQuestion(question) !== 'ready');
+    if (invalidQuestion) {
+      state.invalidQuestionId = invalidQuestion.id;
+      state.activeQuestionId = invalidQuestion.id;
+      render();
+      return { valid: false, message: `Question ${state.questions.indexOf(invalidQuestion) + 1} is ${validationForQuestion(invalidQuestion)}.` };
+    }
+
+    return { valid: true, details };
+  }
+
+  function buildPayload(details) {
+    return {
+      ...details,
+      source: 'user',
+      questions: state.questions.map((question) => ({
+        questionText: question.questionText.trim(),
+        questionType: question.questionType,
+        explanation: question.explanation.trim(),
+        choices: question.choices
+          .filter((choice) => choice.text.trim())
+          .map((choice) => ({ text: choice.text.trim(), isCorrect: choice.isCorrect }))
+      }))
+    };
+  }
+
+  form.addEventListener('input', (event) => {
+    updateDetailsSummary();
+    const question = getActiveQuestion();
+    if (!question) return;
+
+    if (event.target.name === 'questionText') {
+      question.questionText = event.target.value;
+      renderQuestionList();
+    }
+    if (event.target.name === 'explanation') {
+      question.explanation = event.target.value;
+    }
+    if (event.target.name === 'choiceText') {
+      const index = Number(event.target.dataset.choiceIndex);
+      question.choices[index].text = event.target.value;
+      renderQuestionList();
+    }
+  });
+
+  form.addEventListener('change', (event) => {
+    updateDetailsSummary();
+    const question = getActiveQuestion();
+    if (!question) return;
+
+    if (event.target.name === 'questionType') {
+      question.questionType = event.target.value;
+      if (question.questionType === 'trueFalse') {
+        normalizeTrueFalseChoices(question);
+      }
+      render();
+    }
+    if (event.target.name === 'correct-choice') {
+      const correctIndex = Number(event.target.value);
+      question.choices = question.choices.map((choice, index) => ({ ...choice, isCorrect: index === correctIndex }));
+      renderQuestionList();
+    }
+  });
 
   form.addEventListener('click', (event) => {
-    const addChoiceButton = event.target.closest('[data-add-choice]');
-    if (addChoiceButton) {
-      const index = addChoiceButton.getAttribute('data-add-choice');
-      const choicesContainer = form.querySelector(`[data-choices="${index}"]`);
-      const choiceCount = choicesContainer.querySelectorAll('.card').length;
-      const choice = document.createElement('div');
-      choice.className = 'card';
-      choice.style.marginTop = '0.5rem';
-      choice.innerHTML = choiceMarkup(index, choiceCount);
-      choicesContainer.appendChild(choice);
+    const selectButton = event.target.closest('[data-select-question]');
+    if (selectButton) {
+      state.activeQuestionId = Number(selectButton.dataset.selectQuestion);
+      state.invalidQuestionId = null;
+      render();
       return;
     }
 
     const removeQuestionButton = event.target.closest('[data-remove-question]');
     if (removeQuestionButton) {
-      const index = removeQuestionButton.getAttribute('data-remove-question');
-      form.querySelector(`[data-question="${index}"]`)?.remove();
+      removeQuestion(Number(removeQuestionButton.dataset.removeQuestion));
+      return;
+    }
+
+    const removeChoiceButton = event.target.closest('[data-remove-choice]');
+    const question = getActiveQuestion();
+    if (removeChoiceButton && question) {
+      const choiceIndex = Number(removeChoiceButton.dataset.removeChoice);
+      const wasCorrect = question.choices[choiceIndex]?.isCorrect;
+      question.choices.splice(choiceIndex, 1);
+      if (wasCorrect || !question.choices.some((choice) => choice.isCorrect)) {
+        question.choices[0].isCorrect = true;
+      }
+      render();
     }
   });
+
+  activeQuestionContainer.addEventListener('click', (event) => {
+    if (event.target.id !== 'add-choice') return;
+    const question = getActiveQuestion();
+    if (!question || question.questionType === 'trueFalse') return;
+    question.choices.push({ text: '', isCorrect: false });
+    render();
+  });
+
+  addQuestionButton.addEventListener('click', addQuestion);
+  addQuestionFooterButton.addEventListener('click', addQuestion);
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const data = new FormData(form);
-    const questions = Array.from(form.querySelectorAll('[data-question]')).map((questionBlock) => {
-      const questionId = questionBlock.getAttribute('data-question');
-      const choiceInputs = Array.from(questionBlock.querySelectorAll('input[name^="choiceText-"]'));
-      const correctIndex = Number(form.querySelector(`input[name="correct-${questionId}"]:checked`)?.value || 0);
-      return {
-        questionText: data.get(`questionText-${questionId}`),
-        questionType: data.get(`questionType-${questionId}`),
-        explanation: data.get(`explanation-${questionId}`),
-        choices: choiceInputs.map((input, choiceIndex) => ({ text: input.value, isCorrect: choiceIndex === correctIndex }))
-      };
-    }).filter((question) => question.questionText);
-
-    const payload = {
-      title: data.get('title'),
-      description: data.get('description'),
-      topic: data.get('topic'),
-      difficulty: data.get('difficulty'),
-      isPublic: data.get('isPublic') === 'on',
-      source: 'user',
-      questions
-    };
+    const result = validateQuiz();
+    if (!result.valid) {
+      setStatus(result.message, 'error', { title: 'Cannot save quiz', duration: 7000 });
+      return;
+    }
 
     try {
-      status.textContent = 'Saving quiz...';
-      await createQuiz(payload);
+      setStatus('Saving quiz...', 'info', { title: 'Saving', duration: 2500 });
+      await createQuiz(buildPayload(result.details));
       window.location.href = '/';
     } catch (error) {
-      status.textContent = error.message;
+      setStatus(error.message, 'error', { title: 'Save failed', duration: 7000 });
     }
   });
+
+  addQuestion();
 </script>
+
+
