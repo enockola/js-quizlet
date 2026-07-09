@@ -381,3 +381,7 @@ textarea { min-height: 100px; resize: vertical; }
     animation: none;
   }
 }
+
+#quiz-search {
+  margin-left: 15px;
+}
