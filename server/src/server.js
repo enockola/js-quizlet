@@ -360,20 +360,19 @@ app.get('/api/health', (_req, res) => {
 app.post('/api/seed', async (_req, res, next) => {
   try {
     if (isUsingMongo()) {
-      await User.deleteMany({});
-      await Quiz.deleteMany({});
-
-      const user = await User.create({
-        username: 'Demo Student',
-        email: 'demo@student.com',
-        passwordHash: await bcrypt.hash('Password123', 10)
-      });
+      let user = await User.findOne({ email: 'demo@student.com' });
+      if (!user) {
+        user = await User.create({
+          username: 'Demo Student',
+          email: 'demo@student.com',
+          passwordHash: await bcrypt.hash('Password123', 10)
+        });
+      }
 
       const quizDocs = seedInMemory().quizzes.map((quiz) => ({ ...quiz, ownerId: user._id }));
+      await persistQuizDocuments(quizDocs, user._id);
 
-      await Quiz.insertMany(quizDocs);
-
-      return res.json({ message: 'Seeded database successfully' });
+      return res.json({ message: 'Ensured default quizzes exist without removing saved quizzes' });
     }
 
     seedLocalData();

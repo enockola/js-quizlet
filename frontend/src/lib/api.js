@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.PUBLIC_API_URL || 'http://localhost:3000';
+const API_URL = import.meta.env.PUBLIC_API_URL || 'http://localhost:5000';
 
 function storageAvailable() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
