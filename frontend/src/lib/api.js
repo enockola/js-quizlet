@@ -69,6 +69,10 @@ export const getMyQuizzes = () => request('/api/quizzes?owner=me');
 
 export const getQuiz = (id) => request(`/api/quizzes/${id}`);
 
+export const getAttempts = (search = '') => request(`/api/attempts${search ? `?search=${encodeURIComponent(search)}` : ''}`);
+
+export const saveAttempt = (data) => request('/api/attempts', { method: 'POST', body: data });
+
 export const createQuiz = (data) => request('/api/quizzes', { method: 'POST', body: data });
 
 export const updateQuiz = (id, data) => request(`/api/quizzes/${id}`, { method: 'PUT', body: data });

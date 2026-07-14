@@ -20,7 +20,8 @@ const { id } = Astro.params;
 </Layout>
 
 <script type="module">
-  import { getQuiz } from '../../lib/api.js';
+  import { getQuiz, saveAttempt, getToken } from '../../lib/api.js';
+  import { showToast } from '../../lib/toast.js';
 
   const quizId = document.getElementById('page-data')?.dataset.id;
   const container = document.getElementById('quiz-taker');
@@ -102,16 +103,39 @@ const { id } = Astro.params;
           });
 
           const correctCount = review.filter((item) => item.isCorrect).length;
+          const totalQuestions = review.length;
+          const attemptPayload = {
+            quizId,
+            quizTitle: quiz.title,
+            topic: quiz.topic,
+            difficulty: quiz.difficulty,
+            totalQuestions,
+            correctCount,
+            incorrectCount: totalQuestions - correctCount
+          };
+
+          const persistAttempt = async () => {
+            if (!getToken()) return;
+            try {
+              await saveAttempt(attemptPayload);
+              showToast('Your attempt was saved to your dashboard.', { type: 'success' });
+            } catch (error) {
+              showToast(error.message || 'Unable to save this attempt to your account.', { type: 'error' });
+            }
+          };
+
           window.sessionStorage.setItem(`quiz-result-${quizId}`, JSON.stringify({
             quizId,
             quizTitle: quiz.title,
             topic: quiz.topic,
-            total: review.length,
+            total: totalQuestions,
             correctCount,
-            incorrectCount: review.length - correctCount,
+            incorrectCount: totalQuestions - correctCount,
             review
           }));
-          window.location.href = `/results?quiz=${quizId}`;
+          persistAttempt().finally(() => {
+            window.location.href = `/results?quiz=${quizId}`;
+          });
         });
       };
 
