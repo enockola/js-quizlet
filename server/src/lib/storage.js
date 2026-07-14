@@ -1,11 +1,13 @@
 export const storage = {
   users: [],
-  quizzes: []
+  quizzes: [],
+  attempts: []
 };
 
 export function resetStorage() {
   storage.users = [];
   storage.quizzes = [];
+  storage.attempts = [];
 }
 
 export function nextId(items) {
