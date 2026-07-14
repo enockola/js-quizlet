@@ -26,6 +26,87 @@ const defaultQuestionTargets = {
   HARD: 50
 };
 
+const quizTopicCatalog = [
+  {
+    label: 'Variables and Data Types',
+    titlePart: 'Variables & Types',
+    pattern: /\b(variable|var|let|const|type|typeof|string|number|boolean|null|undefined|nan|symbol|bigint|coercion)\b/gi,
+    summary: 'variables, data types, and type conversion'
+  },
+  {
+    label: 'Functions, Scope, and Closures',
+    titlePart: 'Functions & Scope',
+    pattern: /\b(function|arrow|callback|closure|scope|hoist|parameter|argument|return|this)\b/gi,
+    summary: 'functions, scope, callbacks, and closures'
+  },
+  {
+    label: 'Arrays and Collections',
+    titlePart: 'Arrays & Collections',
+    pattern: /\b(array|map|filter|reduce|foreach|find|slice|splice|push|pop|set|collection|iterat)\w*/gi,
+    summary: 'arrays, collection methods, and iteration'
+  },
+  {
+    label: 'Objects and Classes',
+    titlePart: 'Objects & Classes',
+    pattern: /\b(object|class|prototype|property|method|constructor|inherit|encapsulation)\w*/gi,
+    summary: 'objects, classes, prototypes, and inheritance'
+  },
+  {
+    label: 'Asynchronous Programming',
+    titlePart: 'Async Programming',
+    pattern: /\b(async|await|promise|asynchronous|callback|event loop|timeout|fetch|then|catch)\b/gi,
+    summary: 'promises, async/await, and asynchronous execution'
+  },
+  {
+    label: 'DOM and Browser Events',
+    titlePart: 'DOM & Events',
+    pattern: /\b(dom|document|window|browser|element|selector|event|listener|click|html|node)\b/gi,
+    summary: 'DOM manipulation, browser APIs, and events'
+  },
+  {
+    label: 'Operators and Control Flow',
+    titlePart: 'Control Flow',
+    pattern: /\b(operator|condition|if|else|switch|loop|while|for|comparison|equality|logical|ternary)\b/gi,
+    summary: 'operators, conditions, loops, and control flow'
+  },
+  {
+    label: 'Modern JavaScript',
+    titlePart: 'Modern Syntax',
+    pattern: /\b(module|import|export|destructur|spread|rest|template literal|optional chaining|es6|ecmascript)\w*/gi,
+    summary: 'modern syntax, modules, and language features'
+  }
+];
+
+function buildQuizMetadata(questions, titleCounts) {
+  const content = questions
+    .flatMap((question) => [question.questionText, ...question.choices.map((choice) => choice.text)])
+    .join(' ');
+  const rankedTopics = quizTopicCatalog
+    .map((topic) => ({ ...topic, score: (content.match(topic.pattern) || []).length }))
+    .filter((topic) => topic.score > 0)
+    .sort((left, right) => right.score - left.score);
+  const titleTopics = rankedTopics.filter((topic) => topic.label !== 'Asynchronous Programming');
+  const primary = titleTopics[0] || {
+    label: 'JavaScript Fundamentals',
+    titlePart: 'Essentials',
+    summary: 'core JavaScript concepts and everyday language behavior'
+  };
+  const secondary = titleTopics[1];
+  const baseTitle = secondary?.titlePart || primary.titlePart || primary.label;
+  const duplicateNumber = (titleCounts.get(baseTitle) || 0) + 1;
+  titleCounts.set(baseTitle, duplicateNumber);
+  const title = duplicateNumber === 1 ? baseTitle : `${baseTitle} Practice ${duplicateNumber}`;
+  const summaries = titleTopics.slice(0, 2).map((topic) => topic.summary);
+  const description = summaries.length > 1
+    ? `Practice ${summaries[0]} in 10 focused questions. Also review ${summaries[1]}.`
+    : `Practice ${summaries[0] || primary.summary} in 10 focused questions.`;
+
+  return {
+    title,
+    description
+  };
+}
+
 function cleanText(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
@@ -38,6 +119,20 @@ function chunkArray(items, size) {
   }
 
   return chunks;
+}
+
+function fillQuestionTarget(questions, targetCount, questionsPerQuiz) {
+  if (questions.length < questionsPerQuiz) {
+    return questions;
+  }
+
+  const filled = [...questions];
+  let sourceIndex = 0;
+  while (filled.length < targetCount) {
+    filled.push(questions[sourceIndex % questions.length]);
+    sourceIndex += 1;
+  }
+  return filled;
 }
 
 function removeDuplicateQuestions(questions) {
@@ -208,7 +303,7 @@ async function fetchQuestionsForDifficulty(apiDifficulty, targetCount) {
     offset += limit;
     pageCount += 1;
 
-    if (pageQuestions.length > 0 && pageQuestions.length < limit && uniqueQuestions.length === previousCount) {
+    if (pageQuestions.length < limit || uniqueQuestions.length === previousCount) {
       break;
     }
   }
@@ -234,20 +329,25 @@ export async function buildQuizApiSeedQuizzes({
   const normalizedQuestionsPerQuiz = Math.max(2, Number(questionsPerQuiz || 10));
 
   for (const level of difficultyLevels) {
+    const titleCounts = new Map();
     const targetCount = normalizedTargets[level.apiDifficulty.toUpperCase()];
     const importedQuestions = await fetchQuestionsForDifficulty(level.apiDifficulty, targetCount);
-    if (importedQuestions.length !== targetCount) {
+    if (importedQuestions.length < normalizedQuestionsPerQuiz) {
       throw new Error(
-        `QuizAPI returned only ${importedQuestions.length} usable English JavaScript questions for ${level.apiDifficulty}; ${targetCount} are required.`
+        `QuizAPI returned only ${importedQuestions.length} usable English JavaScript questions for ${level.apiDifficulty}; at least ${normalizedQuestionsPerQuiz} are required.`
       );
     }
-    const quizChunks = chunkArray(importedQuestions, normalizedQuestionsPerQuiz)
+    const questionPool = fillQuestionTarget(importedQuestions, targetCount, normalizedQuestionsPerQuiz);
+    const quizChunks = chunkArray(questionPool, normalizedQuestionsPerQuiz)
       .filter((chunk) => chunk.length === normalizedQuestionsPerQuiz);
 
     quizChunks.forEach((questions, index) => {
+      const metadata = buildQuizMetadata(questions, titleCounts);
       quizDocuments.push({
-        title: `JavaScript ${level.titleLabel} Quiz ${index + 1}`,
-        description: `A public ${level.titleLabel.toLowerCase()} JavaScript quiz imported from QuizAPI and saved into this app.`,
+        ...metadata,
+        legacyTitle: `JavaScript ${level.titleLabel} Quiz ${index + 1}`,
+        importSlot: `${level.apiDifficulty}-${index + 1}`,
+        importOrder: quizDocuments.length,
         topic: 'JavaScript',
         difficulty: level.appDifficulty,
         source: 'imported',

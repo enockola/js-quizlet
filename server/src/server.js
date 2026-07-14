@@ -74,6 +74,8 @@ const quizSchema = new mongoose.Schema(
     difficulty: { type: String, enum: ['Beginner', 'Intermediate', 'Advanced'], required: true },
     source: { type: String, enum: ['freeCodeCamp', 'imported', 'user'], default: 'user' },
     importSource: { type: String, enum: ['freeCodeCamp', 'manual', 'generated', 'quizApi'], default: 'manual' },
+    importSlot: { type: String, trim: true, sparse: true },
+    importOrder: { type: Number, min: 0, sparse: true },
     ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     isPublic: { type: Boolean, default: true },
     questions: { type: [questionSchema], required: true }
@@ -303,6 +305,8 @@ function normalizeQuizForStorage(quiz, ownerId = null) {
     difficulty: quiz.difficulty || 'Beginner',
     source: quiz.source || 'user',
     importSource: quiz.importSource || 'manual',
+    importSlot: quiz.importSlot || undefined,
+    importOrder: Number.isInteger(quiz.importOrder) ? quiz.importOrder : undefined,
     ownerId,
     isPublic: quiz.isPublic ?? true,
     questions
@@ -320,7 +324,35 @@ async function persistQuizDocuments(quizDocs, ownerId = null) {
 
     if (isUsingMongo()) {
       const publicId = quizDoc.publicId ?? await nextMongoPublicId(Quiz);
-      const existing = await Quiz.findOne({ title: normalized.title, topic: normalized.topic, source: normalized.source });
+      const titleMatch = quizDoc.legacyTitle ? [normalized.title, quizDoc.legacyTitle] : [normalized.title];
+      const identityMatches = [{ title: { $in: titleMatch } }];
+      if (normalized.importSlot) {
+        identityMatches.push({ importSlot: normalized.importSlot });
+      }
+      let existing;
+      if (normalized.importSource === 'quizApi' && Number.isInteger(normalized.importOrder)) {
+        existing = await Quiz.findOne({ importSource: 'quizApi', importOrder: normalized.importOrder });
+        if (!existing) {
+          const candidates = await Quiz.find({ importSource: 'quizApi', topic: normalized.topic }).sort({ publicId: 1 });
+          existing = candidates[normalized.importOrder];
+        }
+      } else {
+        existing = await Quiz.findOne({
+          $or: identityMatches,
+          topic: normalized.topic,
+          difficulty: normalized.difficulty,
+          source: normalized.source
+        });
+      }
+      if (!existing && normalized.importSource === 'quizApi' && normalized.importSlot) {
+        const slotIndex = Math.max(0, Number(normalized.importSlot.split('-').at(-1)) - 1);
+        const candidates = await Quiz.find({
+          importSource: 'quizApi',
+          difficulty: normalized.difficulty,
+          topic: normalized.topic
+        }).sort({ publicId: 1 });
+        existing = candidates[slotIndex];
+      }
       if (existing) {
         if (normalized.importSource === 'quizApi') {
           Object.assign(existing, normalized);
@@ -335,7 +367,28 @@ async function persistQuizDocuments(quizDocs, ownerId = null) {
       continue;
     }
 
-    const existing = storage.quizzes.find((item) => item.title === normalized.title && item.topic === normalized.topic && item.source === normalized.source);
+    let existing;
+    if (normalized.importSource === 'quizApi' && Number.isInteger(normalized.importOrder)) {
+      existing = storage.quizzes.find((item) => item.importSource === 'quizApi' && item.importOrder === normalized.importOrder);
+      if (!existing) {
+        existing = storage.quizzes
+          .filter((item) => item.importSource === 'quizApi' && item.topic === normalized.topic)
+          .sort((left, right) => Number(left.publicId) - Number(right.publicId))[normalized.importOrder];
+      }
+    } else {
+      existing = storage.quizzes.find((item) =>
+        [normalized.title, quizDoc.legacyTitle].includes(item.title) &&
+        item.topic === normalized.topic &&
+        item.difficulty === normalized.difficulty &&
+        item.source === normalized.source
+      );
+    }
+    if (!existing && normalized.importSource === 'quizApi' && normalized.importSlot) {
+      const slotIndex = Math.max(0, Number(normalized.importSlot.split('-').at(-1)) - 1);
+      existing = storage.quizzes
+        .filter((item) => item.importSource === 'quizApi' && item.difficulty === normalized.difficulty && item.topic === normalized.topic)
+        .sort((left, right) => Number(left.publicId) - Number(right.publicId))[slotIndex];
+    }
     if (existing) {
       if (normalized.importSource === 'quizApi') {
         Object.assign(existing, normalized, { updatedAt: new Date().toISOString() });
