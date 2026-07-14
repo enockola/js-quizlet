@@ -16,6 +16,10 @@ const { id } = Astro.params;
       <section class="card" style="margin-top: 1rem;">
         <div id="quiz-details">Loading quiz…</div>
       </section>
+      <section class="card question-preview-card is-hidden" id="question-preview" aria-labelledby="question-preview-title">
+        <h2 id="question-preview-title">Questions in this quiz</h2>
+        <ol id="question-preview-list" class="question-preview-list"></ol>
+      </section>
     </div>
   </main>
 </Layout>
@@ -25,22 +29,39 @@ const { id } = Astro.params;
 
   const quizId = document.getElementById('page-data')?.dataset.id;
   const container = document.getElementById('quiz-details');
+  const questionPreview = document.getElementById('question-preview');
+  const questionPreviewList = document.getElementById('question-preview-list');
+
+  function difficultyClass(difficulty) {
+    return `difficulty-${String(difficulty || '').toLowerCase()}`;
+  }
+
+  function escapeHtml(value) {
+    return String(value || '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+  }
 
   async function loadQuiz() {
     try {
       const quiz = await getQuiz(quizId);
       container.innerHTML = `
-        <h1>${quiz.title}</h1>
-        <p class="muted">${quiz.description || ''}</p>
+        <h1>${escapeHtml(quiz.title)}</h1>
+        <p class="muted">${escapeHtml(quiz.description || '')}</p>
         <div class="toolbar" style="margin-bottom:1rem;">
-          <span class="badge">${quiz.topic}</span>
-          <span class="badge">${quiz.difficulty}</span>
-          <span class="badge">${quiz.source}</span>
+          <span class="badge ${difficultyClass(quiz.difficulty)}">${escapeHtml(quiz.difficulty)}</span>
           <span class="badge">${quiz.questions?.length || 0} questions</span>
         </div>
-        <p><strong>Questions:</strong> ${quiz.questions?.length || 0}</p>
         <a class="btn" href="/take/${quiz.id}">Start this quiz</a>
       `;
+
+      questionPreviewList.innerHTML = (quiz.questions || [])
+        .map((question) => `<li>${escapeHtml(question.questionText)}</li>`)
+        .join('');
+      questionPreview.classList.toggle('is-hidden', !quiz.questions?.length);
 
     } catch {
       container.innerHTML = '<p>Unable to load the quiz right now.</p>';

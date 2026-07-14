@@ -13,9 +13,21 @@ import Layout from '../layouts/Layout.astro';
           </div>
           <a class="btn secondary auth-only is-hidden" href="/create">Create quiz</a>
         </div>
-        <div class="card">
-          <label for="quiz-search">Search quizzes</label>
-          <input id="quiz-search" placeholder="arrays, objects, loops..." />
+        <div class="card quiz-search-card">
+          <div class="quiz-search-controls">
+            <div class="difficulty-select-field">
+              <select id="difficulty-select" aria-label="Filter by difficulty">
+                <option value="">All difficulties</option>
+                <option value="Beginner">Beginner</option>
+                <option value="Intermediate">Intermediate</option>
+                <option value="Advanced">Advanced</option>
+              </select>
+            </div>
+            <div class="quiz-search-field">
+              <label for="quiz-search">Search quizzes</label>
+              <input id="quiz-search" placeholder="arrays, objects, loops..." />
+            </div>
+          </div>
         </div>
         <div id="quiz-status" class="muted"></div>
         <div class="grid grid-2" id="quiz-list"></div>
@@ -30,6 +42,8 @@ import Layout from '../layouts/Layout.astro';
   const input = document.getElementById('quiz-search');
   const list = document.getElementById('quiz-list');
   const status = document.getElementById('quiz-status');
+  const difficultySelect = document.getElementById('difficulty-select');
+  let loadedQuizzes = [];
 
   function difficultyClass(difficulty) {
     return `difficulty-${String(difficulty || '').toLowerCase()}`;
@@ -42,7 +56,7 @@ import Layout from '../layouts/Layout.astro';
     }
 
     list.innerHTML = quizzes.map((quiz) => `
-      <article class="card">
+      <article class="card quiz-card" data-details-url="/quizzes/${quiz.id}" tabindex="0" role="link" aria-label="View quiz details">
         <h3>${quiz.title}</h3>
         <p class="muted">${quiz.description || ''}</p>
         <div class="toolbar" style="margin: 0.75rem 0;">
@@ -57,12 +71,21 @@ import Layout from '../layouts/Layout.astro';
     `).join('');
   }
 
+  function applyDifficultyFilters() {
+    const selectedDifficulty = difficultySelect?.value || '';
+    const filteredQuizzes = !selectedDifficulty
+      ? loadedQuizzes
+      : loadedQuizzes.filter((quiz) => quiz.difficulty === selectedDifficulty);
+
+    render(filteredQuizzes);
+    if (status) status.textContent = `${filteredQuizzes.length} quizzes loaded`;
+  }
+
   async function load() {
     if (status) status.textContent = 'Loading quizzes...';
     try {
-      const quizzes = await getQuizzes(input?.value || '');
-      render(quizzes);
-      if (status) status.textContent = `${quizzes.length} quizzes loaded`;
+      loadedQuizzes = await getQuizzes(input?.value || '');
+      applyDifficultyFilters();
     } catch (error) {
       if (status) status.textContent = error.message;
       list.innerHTML = `<div class="empty-state">${error.message}</div>`;
@@ -70,5 +93,18 @@ import Layout from '../layouts/Layout.astro';
   }
 
   input?.addEventListener('input', load);
+  difficultySelect?.addEventListener('change', applyDifficultyFilters);
+  list?.addEventListener('click', (event) => {
+    const card = event.target.closest('.quiz-card');
+    if (!card || event.target.closest('a, button')) return;
+    window.location.href = card.dataset.detailsUrl;
+  });
+  list?.addEventListener('keydown', (event) => {
+    if (!['Enter', ' '].includes(event.key) || event.target.closest('a, button')) return;
+    const card = event.target.closest('.quiz-card');
+    if (!card) return;
+    event.preventDefault();
+    window.location.href = card.dataset.detailsUrl;
+  });
   load();
 </script>
