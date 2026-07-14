@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.PUBLIC_API_URL || 'http://localhost:5000';
+const API_URL = import.meta.env.PUBLIC_API_URL || 'http://localhost:3000';
 
 function storageAvailable() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -90,3 +90,9 @@ export const login = async (data) => {
 };
 
 export const getCurrentUser = () => request('/api/auth/me');
+
+export const importJavascriptQuiz = (data = {}) =>
+  request('/api/quizzes/import/javascript', {
+    method: 'POST',
+    body: data
+  });

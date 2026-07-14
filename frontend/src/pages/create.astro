@@ -54,8 +54,43 @@ import Layout from '../layouts/Layout.astro';
           <div class="split form-footer">
             <p class="muted" id="create-status"></p>
             <div class="toolbar">
+              
               <button type="button" class="btn secondary" id="add-question-footer">Add question</button>
               <button class="btn" type="submit">Save quiz</button>
+              <button id="import-js-quiz" type="button">
+  Import JavaScript Questions
+</button>
+
+<p id="import-status"></p>
+
+<script>
+  import { importJavascriptQuiz, getToken } from '../lib/api.js';
+
+  const importButton = document.querySelector('#import-js-quiz');
+  const status = document.querySelector('#import-status');
+
+  importButton?.addEventListener('click', async () => {
+    try {
+      if (!getToken()) {
+        status.textContent = 'Please log in before importing a quiz.';
+        return;
+      }
+
+      importButton.disabled = true;
+      status.textContent = 'Importing JavaScript questions...';
+
+      const quiz = await importJavascriptQuiz({
+        difficulty: 'Intermediate',
+      });
+
+      status.textContent = 'Quiz imported successfully!';
+      window.location.href = `/quizzes/${quiz.id}`;
+    } catch (error) {
+      status.textContent = error.message || 'Failed to import quiz.';
+      importButton.disabled = false;
+    }
+  });
+</script>
             </div>
           </div>
         </form>
