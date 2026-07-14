@@ -1,7 +1,7 @@
 ---
 import Layout from '../layouts/Layout.astro';
 
-const quizId = Astro.url.searchParams.get('quiz') || '';
+// const quizId = Astro.url.searchParams.get('quiz') || '';
 ---
 
 <Layout title="Results">
@@ -19,7 +19,8 @@ const quizId = Astro.url.searchParams.get('quiz') || '';
 
   const quizId = '${quizId}';
   const panel = document.getElementById('results-panel');
-  const stored = quizId ? window.sessionStorage.getItem(`quiz-result-${quizId}`) : null;
+  // const stored = quizId ? window.sessionStorage.getItem(`quiz-result-${quizId}`) : null;
+  const stored = quizId ? window.sessionStorage.getItem(`quiz-result`) : null;
 
   if (!stored) {
     panel.innerHTML = '<div class="empty-state">No quiz results found. <a href="/quizzes">Browse quizzes</a>.</div>';
@@ -40,7 +41,7 @@ const quizId = Astro.url.searchParams.get('quiz') || '';
         <span class="badge error">Incorrect: ${result.incorrectCount}</span>
         <span class="badge">Total: ${result.total}</span>
       </div>
-      <div class="toolbar">
+      <div class="toolbar" style="margin-top: 10px;">
         <a class="btn" href="/take/${quizId}">Retry all</a>
         <a class="btn secondary" href="/dashboard">View dashboard</a>
         <a class="btn secondary" href="/quizzes">Browse quizzes</a>
