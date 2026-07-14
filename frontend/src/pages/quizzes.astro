@@ -31,6 +31,10 @@ import Layout from '../layouts/Layout.astro';
   const list = document.getElementById('quiz-list');
   const status = document.getElementById('quiz-status');
 
+  function difficultyClass(difficulty) {
+    return `difficulty-${String(difficulty || '').toLowerCase()}`;
+  }
+
   function render(quizzes) {
     if (!quizzes.length) {
       list.innerHTML = '<div class="empty-state">No quizzes found.</div>';
@@ -39,12 +43,10 @@ import Layout from '../layouts/Layout.astro';
 
     list.innerHTML = quizzes.map((quiz) => `
       <article class="card">
-        <div class="badge">${quiz.topic}</div>
         <h3>${quiz.title}</h3>
         <p class="muted">${quiz.description || ''}</p>
         <div class="toolbar" style="margin: 0.75rem 0;">
-          <span class="badge">${quiz.difficulty}</span>
-          <span class="badge">${quiz.source}</span>
+          <span class="badge ${difficultyClass(quiz.difficulty)}">${quiz.difficulty}</span>
           <span class="badge">${quiz.questions?.length || 0} questions</span>
         </div>
         <div class="toolbar">

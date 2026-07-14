@@ -9,15 +9,15 @@ interface QuizItem {
 }
 
 const { quiz }: { quiz: QuizItem } = Astro.props;
+const difficultyClass = `difficulty-${quiz.difficulty.toLowerCase()}`;
 ---
 
 <article class="card">
-  <div class="badge">{quiz.category}</div>
   <h3>{quiz.title}</h3>
   <p class="muted">{quiz.description}</p>
   <div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin: 0.7rem 0;">
-    <span class="badge">{quiz.difficulty}</span>
-    {quiz.tags?.map((tag) => <span class="badge">#{tag}</span>)}
+    <span class={`badge ${difficultyClass}`}>{quiz.difficulty}</span>
+    {quiz.tags?.filter((tag) => tag.toLowerCase() !== 'imported').map((tag) => <span class="badge">#{tag}</span>)}
   </div>
   <div style="display:flex; justify-content:space-between; gap:0.5rem; align-items:center;">
     <a class="btn secondary" href={`/quizzes/${quiz.id}`}>View</a>

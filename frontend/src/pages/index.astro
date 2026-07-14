@@ -61,6 +61,10 @@ import Layout from '../layouts/Layout.astro';
   const dashboardList = document.getElementById('dashboard-list');
   const user = getToken() ? getUser() : null;
 
+  function difficultyClass(difficulty) {
+    return `difficulty-${String(difficulty || '').toLowerCase()}`;
+  }
+
   function syncAuthState() {
     document.querySelectorAll('.auth-only').forEach((element) => {
       element.classList.toggle('is-hidden', !user);
@@ -75,12 +79,10 @@ import Layout from '../layouts/Layout.astro';
       const quizzes = await getQuizzes();
       quizContainer.innerHTML = quizzes.slice(0, 2).map((quiz) => `
         <article class="card">
-          <div class="badge">${quiz.topic}</div>
           <h3>${quiz.title}</h3>
           <p class="muted">${quiz.description || ''}</p>
           <div class="toolbar" style="margin: 0.75rem 0;">
-            <span class="badge">${quiz.difficulty}</span>
-            <span class="badge">${quiz.source}</span>
+            <span class="badge ${difficultyClass(quiz.difficulty)}">${quiz.difficulty}</span>
           </div>
           <div class="toolbar">
             <a class="btn secondary" href="/quizzes/${quiz.id}">View</a>
@@ -103,12 +105,10 @@ import Layout from '../layouts/Layout.astro';
 
     dashboardList.innerHTML = quizzes.map((quiz) => `
       <article class="card">
-        <div class="badge">${quiz.topic}</div>
         <h3>${quiz.title}</h3>
         <p class="muted">${quiz.description || ''}</p>
         <div class="toolbar" style="margin: 0.75rem 0;">
-          <span class="badge">${quiz.difficulty}</span>
-          <span class="badge">${quiz.source}</span>
+          <span class="badge ${difficultyClass(quiz.difficulty)}">${quiz.difficulty}</span>
         </div>
         <div class="toolbar">
           <a class="btn secondary" href="/quizzes/${quiz.id}">Details</a>

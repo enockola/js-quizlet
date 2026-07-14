@@ -4,17 +4,26 @@ import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { seedInMemory } from './lib/seed.js';
 import { seedData as seedLocalData } from './lib/seedData.js';
 import { storage, resetStorage } from './lib/storage.js';
+import { buildQuizApiSeedQuizzes } from './services/quizApiImportService.js';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 dotenv.config();
 
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
+const MONGO_CONNECTION_STRING = process.env.MONGODB_URI || process.env.MONGO_URI;
+const MONGO_CONNECT_TIMEOUT_MS = Number(process.env.MONGO_CONNECT_TIMEOUT_MS || 5000);
 
 // Get (or default) the frontend_url.  We only want to accept API calls from OUR frontend.
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:4321';
+const FRONTEND_URL = process.env.FRONTEND_URL || process.env.CLIENT_ORIGIN || 'http://localhost:4321';
 
 const userSchema = new mongoose.Schema(
   {
@@ -64,7 +73,7 @@ const quizSchema = new mongoose.Schema(
     topic: { type: String, required: true, trim: true },
     difficulty: { type: String, enum: ['Beginner', 'Intermediate', 'Advanced'], required: true },
     source: { type: String, enum: ['freeCodeCamp', 'imported', 'user'], default: 'user' },
-    importSource: { type: String, enum: ['freeCodeCamp', 'manual', 'generated'], default: 'manual' },
+    importSource: { type: String, enum: ['freeCodeCamp', 'manual', 'generated', 'quizApi'], default: 'manual' },
     ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     isPublic: { type: Boolean, default: true },
     questions: { type: [questionSchema], required: true }
@@ -313,6 +322,10 @@ async function persistQuizDocuments(quizDocs, ownerId = null) {
       const publicId = quizDoc.publicId ?? await nextMongoPublicId(Quiz);
       const existing = await Quiz.findOne({ title: normalized.title, topic: normalized.topic, source: normalized.source });
       if (existing) {
+        if (normalized.importSource === 'quizApi') {
+          Object.assign(existing, normalized);
+          await existing.save();
+        }
         saved.push(existing);
         continue;
       }
@@ -324,6 +337,9 @@ async function persistQuizDocuments(quizDocs, ownerId = null) {
 
     const existing = storage.quizzes.find((item) => item.title === normalized.title && item.topic === normalized.topic && item.source === normalized.source);
     if (existing) {
+      if (normalized.importSource === 'quizApi') {
+        Object.assign(existing, normalized, { updatedAt: new Date().toISOString() });
+      }
       saved.push(existing);
       continue;
     }
@@ -335,7 +351,7 @@ async function persistQuizDocuments(quizDocs, ownerId = null) {
   return { created, saved };
 }
 
-const isUsingMongo = () => Boolean(process.env.MONGODB_URI) && mongoose.connection.readyState === 1;
+const isUsingMongo = () => Boolean(MONGO_CONNECTION_STRING) && mongoose.connection.readyState === 1;
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', message: 'Backend is running smoothly!' });
@@ -344,24 +360,90 @@ app.get('/api/health', (_req, res) => {
 app.post('/api/seed', async (_req, res, next) => {
   try {
     if (isUsingMongo()) {
-      await User.deleteMany({});
-      await Quiz.deleteMany({});
-
-      const user = await User.create({
-        username: 'Demo Student',
-        email: 'demo@student.com',
-        passwordHash: await bcrypt.hash('Password123', 10)
-      });
+      let user = await User.findOne({ email: 'demo@student.com' });
+      if (!user) {
+        user = await User.create({
+          username: 'Demo Student',
+          email: 'demo@student.com',
+          passwordHash: await bcrypt.hash('Password123', 10)
+        });
+      }
 
       const quizDocs = seedInMemory().quizzes.map((quiz) => ({ ...quiz, ownerId: user._id }));
+      await persistQuizDocuments(quizDocs, user._id);
 
-      await Quiz.insertMany(quizDocs);
-
-      return res.json({ message: 'Seeded database successfully' });
+      return res.json({ message: 'Ensured default quizzes exist without removing saved quizzes' });
     }
 
     seedLocalData();
     return res.json({ message: 'Seeded local data successfully' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/seed/quizapi', async (req, res, next) => {
+  try {
+    const importKey = process.env.IMPORT_SEED_KEY;
+    if (!importKey || req.headers['x-import-key'] !== importKey) {
+      return res.status(401).json({ message: 'Valid import key required' });
+    }
+
+    const questionTargets = req.body.questionTargets || {
+      EASY: 50,
+      MEDIUM: 50,
+      HARD: 50
+    };
+    const questionsPerQuiz = Number(req.body.questionsPerQuiz || 10);
+    const quizDocs = await buildQuizApiSeedQuizzes({
+      questionsPerQuiz,
+      questionTargets
+    });
+    const { created, saved } = await persistQuizDocuments(quizDocs, null);
+
+    return res.status(201).json({
+      message: `Imported ${created.length} new QuizAPI quizzes`,
+      createdCount: created.length,
+      savedCount: saved.length,
+      quizzes: saved.map(toQuizResponse)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/quizzes/import/javascript', requireAuth, async (req, res, next) => {
+  try {
+    const difficulty = ['Beginner', 'Intermediate', 'Advanced'].includes(req.body.difficulty)
+      ? req.body.difficulty
+      : 'Intermediate';
+    let quiz;
+
+    if (isUsingMongo()) {
+      const savedQuizzes = await Quiz.find({
+        topic: 'JavaScript',
+        difficulty,
+        importSource: 'quizApi',
+        isPublic: true
+      });
+      quiz = savedQuizzes[Math.floor(Math.random() * savedQuizzes.length)];
+    } else {
+      const savedQuizzes = storage.quizzes.filter((item) =>
+        item.topic === 'JavaScript' &&
+        item.difficulty === difficulty &&
+        item.importSource === 'quizApi' &&
+        item.isPublic === true
+      );
+      quiz = savedQuizzes[Math.floor(Math.random() * savedQuizzes.length)];
+    }
+
+    if (!quiz) {
+      return res.status(404).json({
+        message: 'No saved JavaScript quiz is available for that difficulty. Run the QuizAPI seed once first.'
+      });
+    }
+
+    return res.json(toQuizResponse(quiz));
   } catch (error) {
     next(error);
   }
@@ -667,20 +749,31 @@ app.get('/api/attempts', requireAuth, async (req, res, next) => {
     next(error);
   }
 });
-
-
 app.use(handleError);
 
 async function connectMongo() {
-  if (!process.env.MONGODB_URI) {
+  if (!MONGO_CONNECTION_STRING) {
     return false;
   }
 
   try {
-    await mongoose.connect(process.env.MONGODB_URI);
+    const mongoConnection = mongoose.connect(MONGO_CONNECTION_STRING, {
+      connectTimeoutMS: MONGO_CONNECT_TIMEOUT_MS,
+      socketTimeoutMS: MONGO_CONNECT_TIMEOUT_MS,
+      serverSelectionTimeoutMS: MONGO_CONNECT_TIMEOUT_MS
+    });
+    mongoConnection.catch(() => {});
+
+    await Promise.race([
+      mongoConnection,
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('MongoDB connection timed out')), MONGO_CONNECT_TIMEOUT_MS);
+      })
+    ]);
     console.log('Connected to MongoDB Atlas');
     return true;
   } catch (error) {
+    await mongoose.disconnect().catch(() => {});
     console.warn('MongoDB connection failed, using local fallback.', error.message);
     return false;
   }
