@@ -124,7 +124,8 @@ const { id } = Astro.params;
             }
           };
 
-          window.sessionStorage.setItem(`quiz-result-${quizId}`, JSON.stringify({
+          // window.sessionStorage.setItem(`quiz-result-${quizId}`, JSON.stringify({
+          window.sessionStorage.setItem('quiz-result', JSON.stringify({
             quizId,
             quizTitle: quiz.title,
             topic: quiz.topic,
