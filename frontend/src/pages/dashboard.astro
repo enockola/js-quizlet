@@ -2,18 +2,125 @@
 import Layout from '../layouts/Layout.astro';
 ---
 
-<Layout title="Dashboard moved">
+<Layout title="Dashboard">
   <main class="page">
     <div class="container">
-      <section class="empty-state">
-        <h1>Dashboard moved</h1>
-        <p class="muted">Your dashboard now lives on the home page.</p>
-        <a class="btn" href="/">Go to home</a>
+      <section class="stack">
+        <div class="split">
+          <div>
+            <h1>Your dashboard</h1>
+            <p class="muted">Review your quiz attempts and filter them by quiz name.</p>
+          </div>
+          <a class="btn secondary" href="/quizzes">Browse quizzes</a>
+        </div>
+
+        <section class="card stack">
+          <div class="split">
+            <div>
+              <h2>Attempt history</h2>
+              <p class="muted" id="dashboard-summary">Loading your attempts...</p>
+            </div>
+            <div class="field" style="min-width: min(100%, 320px); margin-bottom: 0;">
+              <label for="attempt-filter">Filter by quiz name</label>
+              <input id="attempt-filter" type="search" placeholder="Search attempts" />
+            </div>
+          </div>
+
+          <div id="attempt-stats" class="toolbar"></div>
+          <div id="attempt-list" class="list"></div>
+        </section>
       </section>
     </div>
   </main>
 </Layout>
 
-<script>
-  window.location.replace('/');
+<script type="module">
+  import { getAttempts, getToken, getUser } from '../lib/api.js';
+
+  const summary = document.getElementById('dashboard-summary');
+  const filterInput = document.getElementById('attempt-filter');
+  const attemptList = document.getElementById('attempt-list');
+  const attemptStats = document.getElementById('attempt-stats');
+  const token = getToken();
+  const user = getUser();
+
+  if (!token || !user) {
+    if (summary) summary.innerHTML = 'Please <a href="/login">log in</a> to view your saved attempts.';
+    if (attemptList) {
+      attemptList.innerHTML = '<div class="empty-state">Your saved quiz attempts will appear here after you log in and submit a quiz.</div>';
+    }
+  }
+
+  function renderStats(attempts) {
+    if (!attemptStats) return;
+
+    if (!attempts.length) {
+      attemptStats.innerHTML = '';
+      return;
+    }
+
+    const averageScore = Math.round(attempts.reduce((sum, attempt) => sum + attempt.scorePercentage, 0) / attempts.length);
+    const bestScore = Math.max(...attempts.map((attempt) => attempt.scorePercentage));
+
+    attemptStats.innerHTML = `
+      <span class="badge dark">Attempts: ${attempts.length}</span>
+      <span class="badge success">Average: ${averageScore}%</span>
+      <span class="badge">Best: ${bestScore}%</span>
+    `;
+  }
+
+  function renderAttempts(attempts) {
+    if (!attemptList) return;
+
+    if (!attempts.length) {
+      attemptList.innerHTML = '<div class="empty-state">No attempts match this filter yet.</div>';
+      renderStats([]);
+      return;
+    }
+
+    attemptList.innerHTML = attempts.map((attempt) => `
+      <article class="card">
+        <div class="split">
+          <div>
+            <h3>${attempt.quizTitle}</h3>
+            <p class="muted">${attempt.topic || 'General'}${attempt.difficulty ? ` • ${attempt.difficulty}` : ''}</p>
+          </div>
+          <span class="badge dark">${attempt.scorePercentage}%</span>
+        </div>
+        <div class="toolbar" style="margin: 0.75rem 0;">
+          <span class="badge success">Correct: ${attempt.correctCount}</span>
+          <span class="badge error">Incorrect: ${attempt.incorrectCount}</span>
+          <span class="badge">Total: ${attempt.totalQuestions}</span>
+        </div>
+        <p class="muted">Submitted ${new Date(attempt.submittedAt).toLocaleString()}</p>
+      </article>
+    `).join('');
+
+    renderStats(attempts);
+  }
+
+  async function loadAttempts(search = '') {
+    if (!token || !user) return;
+
+    if (summary) summary.textContent = search ? `Filtering attempts for “${search}”...` : 'Loading your attempts...';
+
+    try {
+      const attempts = await getAttempts(search);
+      renderAttempts(attempts);
+      if (summary) summary.textContent = attempts.length ? `${attempts.length} attempts found` : 'No attempts yet.';
+    } catch (error) {
+      if (summary) summary.textContent = `An error occurred: ${error.message}`;
+      if (attemptList) attemptList.innerHTML = `<div class="empty-state">An error occurred: ${error.message}</div>`;
+    }
+  }
+
+  let filterTimer = null;
+  filterInput?.addEventListener('input', () => {
+    window.clearTimeout(filterTimer);
+    filterTimer = window.setTimeout(() => {
+      loadAttempts(filterInput.value.trim());
+    }, 200);
+  });
+
+  loadAttempts();
 </script>

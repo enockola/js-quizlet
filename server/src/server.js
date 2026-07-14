@@ -88,8 +88,25 @@ quizSchema.pre('validate', function validateQuiz(next) {
   next();
 });
 
+const attemptSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    quizId: { type: String, required: true },
+    quizTitle: { type: String, required: true, trim: true },
+    topic: { type: String, trim: true },
+    difficulty: { type: String, trim: true },
+    totalQuestions: { type: Number, required: true, min: 0 },
+    correctCount: { type: Number, required: true, min: 0 },
+    incorrectCount: { type: Number, required: true, min: 0 },
+    scorePercentage: { type: Number, required: true, min: 0, max: 100 },
+    submittedAt: { type: Date, default: Date.now }
+  },
+  { timestamps: false }
+);
+
 const User = mongoose.models.User || mongoose.model('User', userSchema);
 const Quiz = mongoose.models.Quiz || mongoose.model('Quiz', quizSchema);
+const Attempt = mongoose.models.Attempt || mongoose.model('Attempt', attemptSchema);
 
 const app = express();
 
@@ -222,6 +239,35 @@ function resolveStoredId(item) {
 
 function findStoredQuizById(id) {
   return storage.quizzes.find((item) => resolveStoredId(item) === String(id));
+}
+
+async function resolveQuizById(id) {
+  if (isUsingMongo()) {
+    const byPublicId = Number(id);
+    return Number.isNaN(byPublicId) ? Quiz.findById(id) : Quiz.findOne({ publicId: byPublicId });
+  }
+
+  return findStoredQuizById(id);
+}
+
+function resolveUserId(user) {
+  return String(user?._id ?? user?.id ?? '');
+}
+
+function toAttemptResponse(attempt) {
+  return {
+    id: String(attempt._id ?? attempt.id),
+    userId: String(attempt.userId),
+    quizId: String(attempt.quizId),
+    quizTitle: attempt.quizTitle,
+    topic: attempt.topic ?? '',
+    difficulty: attempt.difficulty ?? '',
+    totalQuestions: attempt.totalQuestions,
+    correctCount: attempt.correctCount,
+    incorrectCount: attempt.incorrectCount,
+    scorePercentage: attempt.scorePercentage,
+    submittedAt: attempt.submittedAt ?? attempt.createdAt ?? new Date().toISOString()
+  };
 }
 
 function createStoredQuiz(data) {
@@ -528,16 +574,7 @@ app.get('/api/quizzes', async (req, res, next) => {
 
 app.get('/api/quizzes/:id', async (req, res, next) => {
   try {
-    if (isUsingMongo()) {
-      const byPublicId = Number(req.params.id);
-      const quiz = Number.isNaN(byPublicId) ? await Quiz.findById(req.params.id) : await Quiz.findOne({ publicId: byPublicId });
-      if (!quiz) {
-        return res.status(404).json({ message: 'Quiz not found' });
-      }
-      return res.json(toQuizResponse(quiz));
-    }
-
-    const quiz = findStoredQuizById(req.params.id);
+    const quiz = await resolveQuizById(req.params.id);
     if (!quiz) {
       return res.status(404).json({ message: 'Quiz not found' });
     }
@@ -632,6 +669,87 @@ app.delete('/api/quizzes/:id', requireAuth, async (req, res, next) => {
   }
 });
 
+app.post('/api/attempts', requireAuth, async (req, res, next) => {
+  try {
+    const { quizId, quizTitle, topic = '', difficulty = '', totalQuestions, correctCount, incorrectCount } = req.body;
+    if (!quizId) {
+      return res.status(400).json({ message: 'Quiz id is required' });
+    }
+
+    const resolvedQuiz = await resolveQuizById(quizId);
+    const resolvedTitle = String(resolvedQuiz?.title ?? quizTitle ?? '').trim();
+    if (!resolvedTitle) {
+      return res.status(400).json({ message: 'Quiz title is required' });
+    }
+
+    const total = Number(totalQuestions);
+    const correct = Number(correctCount);
+    const incorrect = Number.isFinite(Number(incorrectCount)) ? Number(incorrectCount) : Math.max(0, total - correct);
+
+    if (!Number.isFinite(total) || total < 0 || !Number.isFinite(correct) || correct < 0 || !Number.isFinite(incorrect) || incorrect < 0) {
+      return res.status(400).json({ message: 'Attempt score data is invalid' });
+    }
+
+    const normalizedAttempt = {
+      userId: req.user._id ?? req.user.id,
+      quizId: String(resolvedQuiz?.publicId ?? resolvedQuiz?._id ?? resolvedQuiz?.id ?? quizId),
+      quizTitle: resolvedTitle,
+      topic: String(resolvedQuiz?.topic ?? topic ?? '').trim(),
+      difficulty: String(resolvedQuiz?.difficulty ?? difficulty ?? '').trim(),
+      totalQuestions: total,
+      correctCount: correct,
+      incorrectCount: incorrect,
+      scorePercentage: total ? Math.round((correct / total) * 100) : 0,
+      submittedAt: new Date().toISOString()
+    };
+
+    if (isUsingMongo()) {
+      const attempt = await Attempt.create(normalizedAttempt);
+      return res.status(201).json(toAttemptResponse(attempt));
+    }
+
+    const attempt = {
+      id: String(nextNumericId(storage.attempts)),
+      ...normalizedAttempt
+    };
+    storage.attempts.push(attempt);
+    return res.status(201).json(toAttemptResponse(attempt));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/attempts', requireAuth, async (req, res, next) => {
+  try {
+    const search = String(req.query.search || '').trim().toLowerCase();
+    const userId = resolveUserId(req.user);
+
+    if (isUsingMongo()) {
+      const query = { userId: req.user._id ?? req.user.id };
+      if (search) {
+        query.$or = [
+          { quizTitle: { $regex: search, $options: 'i' } },
+          { topic: { $regex: search, $options: 'i' } }
+        ];
+      }
+
+      const attempts = await Attempt.find(query).sort({ submittedAt: -1 });
+      return res.json(attempts.map(toAttemptResponse));
+    }
+
+    let attempts = storage.attempts.filter((attempt) => String(attempt.userId) === userId);
+    if (search) {
+      attempts = attempts.filter((attempt) =>
+        [attempt.quizTitle, attempt.topic].some((value) => String(value || '').toLowerCase().includes(search))
+      );
+    }
+
+    attempts.sort((left, right) => new Date(right.submittedAt || 0) - new Date(left.submittedAt || 0));
+    return res.json(attempts.map(toAttemptResponse));
+  } catch (error) {
+    next(error);
+  }
+});
 app.use(handleError);
 
 async function connectMongo() {
