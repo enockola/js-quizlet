@@ -65,31 +65,39 @@ import Layout from '../layouts/Layout.astro';
 
 <script>
   import { importJavascriptQuiz, getToken } from '../lib/api.js';
+  const importButton =
+    document.querySelector<HTMLButtonElement>('#import-js-quiz');
 
-  const importButton = document.querySelector('#import-js-quiz');
-  const status = document.querySelector('#import-status');
+  const importStatus =
+    document.querySelector<HTMLParagraphElement>('#import-status');
 
-  importButton?.addEventListener('click', async () => {
-    try {
-      if (!getToken()) {
-        status.textContent = 'Please log in before importing a quiz.';
-        return;
+  if (importButton && importStatus) {
+    importButton.addEventListener('click', async () => {
+      try {
+        if (!getToken()) {
+          importStatus.textContent = 'Please log in before importing a quiz.';
+          return;
+        }
+
+        importButton.disabled = true;
+        importStatus.textContent = 'Importing JavaScript questions...';
+
+        const quiz = await importJavascriptQuiz({
+          difficulty: 'Intermediate'
+        });
+
+        importStatus.textContent = 'Quiz imported successfully!';
+        window.location.href = `/quizzes/${quiz.id}`;
+      } catch (error) {
+        importStatus.textContent =
+          error instanceof Error
+            ? error.message
+            : 'Failed to import quiz.';
+
+        importButton.disabled = false;
       }
-
-      importButton.disabled = true;
-      status.textContent = 'Importing JavaScript questions...';
-
-      const quiz = await importJavascriptQuiz({
-        difficulty: 'Intermediate',
-      });
-
-      status.textContent = 'Quiz imported successfully!';
-      window.location.href = `/quizzes/${quiz.id}`;
-    } catch (error) {
-      status.textContent = error.message || 'Failed to import quiz.';
-      importButton.disabled = false;
-    }
-  });
+    });
+  }
 </script>
             </div>
           </div>
@@ -101,6 +109,12 @@ import Layout from '../layouts/Layout.astro';
 
 <script type="module">
   import { createQuiz, getToken, getUser } from '../lib/api.js';
+  import {
+    buildQuizPayload,
+    normalizeTrueFalseChoices,
+    validateQuizData,
+    validationForQuestion
+  } from '../lib/quizBuilder.js';
   import { showToast } from '../lib/toast.js';
 
   if (!getToken() || !getUser()) {
@@ -172,14 +186,6 @@ import Layout from '../layouts/Layout.astro';
       difficulty: data.get('difficulty') || 'Beginner',
       isPublic: data.get('isPublic') === 'on'
     };
-  }
-
-  function validationForQuestion(question) {
-    if (!question.questionText.trim()) return 'missing question text';
-    const filledChoices = question.choices.filter((choice) => choice.text.trim());
-    if (filledChoices.length < 2) return 'needs 2 choices';
-    if (!question.choices.some((choice) => choice.isCorrect && choice.text.trim())) return 'missing correct answer';
-    return 'ready';
   }
 
   function updateDetailsSummary() {
@@ -298,53 +304,29 @@ import Layout from '../layouts/Layout.astro';
     render();
   }
 
-  function normalizeTrueFalseChoices(question) {
-    const correctText = question.choices.find((choice) => choice.isCorrect)?.text || 'True';
-    question.choices = [
-      { text: 'True', isCorrect: correctText === 'True' },
-      { text: 'False', isCorrect: correctText === 'False' }
-    ];
-    if (!question.choices.some((choice) => choice.isCorrect)) {
-      question.choices[0].isCorrect = true;
-    }
-  }
-
   function validateQuiz() {
     const details = getQuizDetails();
-    if (!details.title || !details.topic) {
+    const result = validateQuizData(details, state.questions);
+
+    if (!result.valid && result.field) {
       if (detailsPanel) detailsPanel.open = true;
-      if (!details.title) {
+      if (result.field === 'title') {
         titleInput?.focus();
       } else {
         topicInput?.focus();
       }
-      return { valid: false, message: 'Add a quiz title and topic before saving.' };
+      return result;
     }
 
-    const invalidQuestion = state.questions.find((question) => validationForQuestion(question) !== 'ready');
-    if (invalidQuestion) {
+    if (!result.valid && Number.isInteger(result.invalidQuestionIndex)) {
+      const invalidQuestion = state.questions[result.invalidQuestionIndex];
       state.invalidQuestionId = invalidQuestion.id;
       state.activeQuestionId = invalidQuestion.id;
       render();
-      return { valid: false, message: `Question ${state.questions.indexOf(invalidQuestion) + 1} is ${validationForQuestion(invalidQuestion)}.` };
+      return result;
     }
 
-    return { valid: true, details };
-  }
-
-  function buildPayload(details) {
-    return {
-      ...details,
-      source: 'user',
-      questions: state.questions.map((question) => ({
-        questionText: question.questionText.trim(),
-        questionType: question.questionType,
-        explanation: question.explanation.trim(),
-        choices: question.choices
-          .filter((choice) => choice.text.trim())
-          .map((choice) => ({ text: choice.text.trim(), isCorrect: choice.isCorrect }))
-      }))
-    };
+    return result;
   }
 
   form.addEventListener('input', (event) => {
@@ -434,7 +416,7 @@ import Layout from '../layouts/Layout.astro';
 
     try {
       setStatus('Saving quiz...', 'info', { title: 'Saving', duration: 2500 });
-      await createQuiz(buildPayload(result.details));
+      await createQuiz(buildQuizPayload(result.details, state.questions));
       window.location.href = '/';
     } catch (error) {
       setStatus(error.message, 'error', { title: 'Save failed', duration: 7000 });
