@@ -7,16 +7,13 @@ import Layout from '../layouts/Layout.astro';
     <section class="hero">
       <div class="container">
         <div class="stack" style="max-width: 840px;">
-          <span class="badge dark">JavaScript Quizlet MVP</span>
           <h1>Study JavaScript with focused quizzes.</h1>
           <p>Browse public quizzes, review answers, and master key concepts with lightweight study sessions.</p>
           <div class="toolbar">
             <a class="btn" href="/quizzes">Browse quizzes</a>
             <a class="btn secondary auth-only is-hidden" href="/create">Create quiz</a>
             <a class="btn secondary guest-only" href="/login">Log in to create</a>
-            <button class="btn ghost auth-only is-hidden" id="seed-button" type="button">Seed fallback</button>
           </div>
-          <p class="muted" id="seed-status"></p>
         </div>
       </div>
     </section>
@@ -52,14 +49,16 @@ import Layout from '../layouts/Layout.astro';
 </Layout>
 
 <script type="module">
-  import { deleteQuiz, getMyQuizzes, getQuizzes, getToken, getUser, seedData } from '../lib/api.js';
+  import { deleteQuiz, getMyQuizzes, getQuizzes, getToken, getUser } from '../lib/api.js';
 
   const quizContainer = document.getElementById('featured-quizzes');
-  const status = document.getElementById('seed-status');
-  const seedButton = document.getElementById('seed-button');
   const dashboardStatus = document.getElementById('dashboard-status');
   const dashboardList = document.getElementById('dashboard-list');
   const user = getToken() ? getUser() : null;
+
+  function difficultyClass(difficulty) {
+    return `difficulty-${String(difficulty || '').toLowerCase()}`;
+  }
 
   function syncAuthState() {
     document.querySelectorAll('.auth-only').forEach((element) => {
@@ -75,12 +74,10 @@ import Layout from '../layouts/Layout.astro';
       const quizzes = await getQuizzes();
       quizContainer.innerHTML = quizzes.slice(0, 2).map((quiz) => `
         <article class="card">
-          <div class="badge">${quiz.topic}</div>
           <h3>${quiz.title}</h3>
           <p class="muted">${quiz.description || ''}</p>
           <div class="toolbar" style="margin: 0.75rem 0;">
-            <span class="badge">${quiz.difficulty}</span>
-            <span class="badge">${quiz.source}</span>
+            <span class="badge ${difficultyClass(quiz.difficulty)}">${quiz.difficulty}</span>
           </div>
           <div class="toolbar">
             <a class="btn secondary" href="/quizzes/${quiz.id}">View</a>
@@ -103,12 +100,10 @@ import Layout from '../layouts/Layout.astro';
 
     dashboardList.innerHTML = quizzes.map((quiz) => `
       <article class="card">
-        <div class="badge">${quiz.topic}</div>
         <h3>${quiz.title}</h3>
         <p class="muted">${quiz.description || ''}</p>
         <div class="toolbar" style="margin: 0.75rem 0;">
-          <span class="badge">${quiz.difficulty}</span>
-          <span class="badge">${quiz.source}</span>
+          <span class="badge ${difficultyClass(quiz.difficulty)}">${quiz.difficulty}</span>
         </div>
         <div class="toolbar">
           <a class="btn secondary" href="/quizzes/${quiz.id}">Details</a>
@@ -140,17 +135,6 @@ import Layout from '../layouts/Layout.astro';
       if (dashboardList) dashboardList.innerHTML = `<div class="empty-state">${error.message}</div>`;
     }
   }
-
-  seedButton?.addEventListener('click', async () => {
-    if (status) status.textContent = 'Seeding data...';
-    try {
-      const result = await seedData();
-      if (status) status.textContent = result.message;
-      await loadFeatured();
-    } catch (error) {
-      if (status) status.textContent = error.message;
-    }
-  });
 
   syncAuthState();
   loadFeatured();

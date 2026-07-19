@@ -2,7 +2,7 @@
 import Layout from '../../layouts/Layout.astro';
 
 export function getStaticPaths() {
-  return Array.from({ length: 20 }, (_, index) => ({ params: { id: String(index + 1) } }));
+  return Array.from({ length: 300 }, (_, index) => ({ params: { id: String(index + 1) } }));
 }
 
 const { id } = Astro.params;
@@ -124,7 +124,8 @@ const { id } = Astro.params;
             }
           };
 
-          window.sessionStorage.setItem(`quiz-result-${quizId}`, JSON.stringify({
+          // window.sessionStorage.setItem(`quiz-result-${quizId}`, JSON.stringify({
+          window.sessionStorage.setItem('quiz-result', JSON.stringify({
             quizId,
             quizTitle: quiz.title,
             topic: quiz.topic,

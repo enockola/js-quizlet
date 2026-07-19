@@ -94,3 +94,9 @@ export const login = async (data) => {
 };
 
 export const getCurrentUser = () => request('/api/auth/me');
+
+export const importJavascriptQuiz = (data = {}) =>
+  request('/api/quizzes/import/javascript', {
+    method: 'POST',
+    body: data
+  });
